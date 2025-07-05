@@ -3,3 +3,4 @@ uvicorn
 requests
 passlib[bcrypt] ##pour hacher les mots de passe
 python-jose
+email-validator
