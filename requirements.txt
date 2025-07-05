@@ -7,3 +7,4 @@ email-validator
 pymongo
 python-multipart
 sentence-transformers
+chromadb
