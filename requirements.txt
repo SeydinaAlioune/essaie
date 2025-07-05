@@ -6,3 +6,4 @@ python-jose
 email-validator
 pymongo
 python-multipart
+sentence-transformers
