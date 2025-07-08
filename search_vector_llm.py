@@ -13,7 +13,8 @@ from bson import ObjectId
 
 # --- PARAMÈTRES ---
 OLLAMA_URL = "http://localhost:11434/api/generate"  # API locale Ollama
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "phi3")  # Par défaut phi3
+# Par défaut, utilise le modèle local 'llama3:8b' (modifiez la variable d'environnement OLLAMA_MODEL pour changer)
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3:8b")
 TOP_K = 3
 
 # Chemin absolu pour la base ChromaDB

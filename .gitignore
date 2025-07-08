@@ -1,0 +1,28 @@
+# Fichiers de configuration et secrets
+config.json
+*.env
+
+# Cache et bases de données locales
+__pycache__/
+chroma_data/
+*.sqlite3
+
+# Fichiers compilés Python
+*.pyc
+*.pyo
+*.pyd
+
+# Dossiers de build et de distribution
+build/
+dist/
+*.egg-info/
+
+# Fichiers de backup
+*~
+*.bak
+*.swp
+
+# Rapports de test et de couverture
+.coverage
+htmlcov/
+.pytest_cache/

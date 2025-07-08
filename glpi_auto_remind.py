@@ -1,14 +1,25 @@
 import requests
 import time
 from datetime import datetime, timedelta
-# Tokens GLPI explicitement définis pour la relance automatique
-GLPI_APP_TOKEN = "mStHpZsjGQuq7TAmjAD70ZrqacqMXgmRTLRpdMQO"
-GLPI_USER_TOKEN = "PIaHf4AUlNpEGJD44shfALJG3txpRNFoHKjYs560"
+import json
 
-import config
+CONFIG_FILE = "config.json"
+
+def load_glpi_config():
+    try:
+        with open(CONFIG_FILE, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print("Erreur: Fichier de configuration 'config.json' non trouvé.")
+        exit()
+
+config = load_glpi_config()
+GLPI_API_URL = config.get("GLPI_API_URL")
+GLPI_APP_TOKEN = config.get("GLPI_APP_TOKEN")
+GLPI_USER_TOKEN = config.get("GLPI_USER_TOKEN")
 
 def get_session_token():
-    url = "http://localhost:8080/apirest.php/initSession"
+    url = f"{GLPI_API_URL}/initSession"
     headers = {
         "App-Token": GLPI_APP_TOKEN,
         "Authorization": f"user_token {GLPI_USER_TOKEN}"
@@ -22,9 +33,9 @@ def get_session_token():
         return None
 
 def get_open_tickets(session_token):
-    url = "http://localhost:8080/apirest.php/Ticket"
+    url = f"{GLPI_API_URL}/Ticket"
     headers = {
-        "App-Token": config.GLPI_APP_TOKEN,
+        "App-Token": GLPI_APP_TOKEN,
         "Session-Token": session_token
     }
     response = requests.get(url, headers=headers)
@@ -35,9 +46,9 @@ def get_last_update(ticket):
     return ticket.get('date_mod') or ticket.get('date')
 
 def add_reminder(session_token, ticket_id):
-    url = "http://localhost:8080/apirest.php/ITILFollowup"
+    url = f"{GLPI_API_URL}/ITILFollowup"
     headers = {
-        "App-Token": config.GLPI_APP_TOKEN,
+        "App-Token": GLPI_APP_TOKEN,
         "Session-Token": session_token,
         "Content-Type": "application/json"
     }

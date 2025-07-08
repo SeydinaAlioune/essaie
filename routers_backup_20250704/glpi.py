@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Body, Depends, HTTPException
 from models.user import User
 from routers.auth import get_current_user
-import config
+from config import GLPI_API_URL, GLPI_APP_TOKEN, GLPI_USER_TOKEN
 import requests
 router = APIRouter()
 
@@ -10,10 +10,10 @@ router = APIRouter()
 import requests
 
 def get_session_token():
-    url = "http://localhost:8080/apirest.php/initSession"
+    url = f"{GLPI_API_URL}/initSession"
     headers = {
-        "App-Token": "mStHpZsjGQuq7TAmjAD70ZrqacqMXgmRTLRpdMQO",
-        "Authorization": "user_token PIaHf4AUlNpEGJD44shfALJG3txpRNFoHKjYs560"
+        "App-Token": GLPI_APP_TOKEN,
+        "Authorization": f"user_token {GLPI_USER_TOKEN}"
     }
     try:
         response = requests.post(url, headers=headers)
@@ -42,9 +42,9 @@ def glpi_info():
     Retourne les infos de configuration GLPI (pour test)
     """
     return {
-        "GLPI_API_URL":"http://localhost:8080/apirest.php",
-        "GLPI_APP_TOKEN": "mStHpZsjGQuq7TAmjAD70ZrqacqMXgmRTLRpdMQO",
-        "GLPI_USER_TOKEN": "PIaHf4AUlNpEGJD44shfALJG3txpRNFoHKjYs560"
+        "GLPI_API_URL":GLPI_API_URL,
+        "GLPI_APP_TOKEN": GLPI_APP_TOKEN,
+        "GLPI_USER_TOKEN": GLPI_USER_TOKEN
     }
 
 @router.post("/glpi/session")
@@ -52,10 +52,10 @@ def glpi_init_session():
     """
     Initialise une session avec l'API GLPI et retourne le session_token ou une erreur.
     """
-    url = "http://localhost:8080/apirest.php/initSession"
+    url = f"{GLPI_API_URL}/initSession"
     headers = {
-        "App-Token": "mStHpZsjGQuq7TAmjAD70ZrqacqMXgmRTLRpdMQO",
-        "Authorization": "user_token PIaHf4AUlNpEGJD44shfALJG3txpRNFoHKjYs560"
+        "App-Token": GLPI_APP_TOKEN,
+        "Authorization": f"user_token {GLPI_USER_TOKEN}"
     }
     try:
         response = requests.post(url, headers=headers)
@@ -69,10 +69,10 @@ def glpi_list_tickets(password_glpi: str = Body(None, embed=True), current_user:
     Récupère la liste des tickets depuis GLPI en utilisant les infos d'authentification connues.
     """
     # 1. Obtenir un session_token
-    url_session = "http://localhost:8080/apirest.php/initSession"
+    url_session = f"{GLPI_API_URL}/initSession"
     headers = {
-        "App-Token": "mStHpZsjGQuq7TAmjAD70ZrqacqMXgmRTLRpdMQO",
-        "Authorization": "user_token PIaHf4AUlNpEGJD44shfALJG3txpRNFoHKjYs560"
+        "App-Token": GLPI_APP_TOKEN,
+        "Authorization": f"user_token {GLPI_USER_TOKEN}"
     }
     try: 
         response = requests.post(url_session, headers=headers)
@@ -86,9 +86,9 @@ def glpi_list_tickets(password_glpi: str = Body(None, embed=True), current_user:
         return {"error": f"Erreur lors de l'initSession: {e}"}
 
     # 2. Utiliser le session_token pour lister les tickets
-    url_tickets = "http://localhost:8080/apirest.php/Ticket"
+    url_tickets = f"{GLPI_API_URL}/Ticket"
     headers_tickets = {
-        "App-Token": "mStHpZsjGQuq7TAmjAD70ZrqacqMXgmRTLRpdMQO",
+        "App-Token": GLPI_APP_TOKEN,
         "Session-Token": session_token
     }
     try:
@@ -133,9 +133,9 @@ def get_or_create_glpi_user(session_token, email, name, password=None, role=None
     Cherche un utilisateur GLPI par email. Si non trouvé, le crée avec le mot de passe et le profil correspondant au rôle. Retourne l'id GLPI.
     """
     # 1. Chercher l'utilisateur par email
-    url = f"http://localhost:8080/apirest.php/User?searchText={email}"
+    url = f"{GLPI_API_URL}/User?searchText={email}"
     headers = {
-        "App-Token": "mStHpZsjGQuq7TAmjAD70ZrqacqMXgmRTLRpdMQO",
+        "App-Token": GLPI_APP_TOKEN,
         "Session-Token": session_token
     }
     try:
@@ -178,7 +178,7 @@ def get_or_create_glpi_user(session_token, email, name, password=None, role=None
         }
     }
     print("[DEBUG USER] Payload création utilisateur GLPI (corrigé) :", payload)
-    resp = requests.post("http://localhost:8080/apirest.php/User", headers=headers, json=payload)
+    resp = requests.post(f"{GLPI_API_URL}/User", headers=headers, json=payload)
     user = resp.json()
     print("[DEBUG USER] Résultat création utilisateur GLPI :", user)
     # Si la création retourne un dict avec 'id', OK
@@ -188,7 +188,7 @@ def get_or_create_glpi_user(session_token, email, name, password=None, role=None
     # Si erreur 'existe déjà', relancer une recherche stricte
     elif isinstance(user, list) and "existe déjà" in str(user).lower():
         print("[DEBUG USER] Erreur création GLPI (existe déjà), relance la recherche GET pour récupérer l'ID...")
-        url_list = "http://localhost:8080/apirest.php/User"
+        url_list = f"{GLPI_API_URL}/User"
         resp = requests.get(url_list, headers=headers)
         users = resp.json()
         email_clean = (email or '').strip().lower()
@@ -215,10 +215,10 @@ def glpi_create_ticket(
     Associe le ticket au vrai utilisateur MCP (traçabilité) via users_id_recipient.
     """
     # 1. Obtenir un session_token
-    url_session = "http://localhost:8080/apirest.php/initSession"
+    url_session = f"{GLPI_API_URL}/initSession"
     headers = {
-        "App-Token": "mStHpZsjGQuq7TAmjAD70ZrqacqMXgmRTLRpdMQO",
-        "Authorization": "user_token PIaHf4AUlNpEGJD44shfALJG3txpRNFoHKjYs560"
+        "App-Token": GLPI_APP_TOKEN,
+        "Authorization": f"user_token {GLPI_USER_TOKEN}"
     }
     try:
         response = requests.post(url_session, headers=headers)
@@ -243,9 +243,9 @@ def glpi_create_ticket(
         return {"error": "Veuillez fournir votre mot de passe GLPI pour la création du compte GLPI."}
 
     # 3. Créer le ticket avec users_id_recipient pour la traçabilité
-    url_create = "http://localhost:8080/apirest.php/Ticket"
+    url_create = f"{GLPI_API_URL}/Ticket"
     headers_create = {
-        "App-Token": "mStHpZsjGQuq7TAmjAD70ZrqacqMXgmRTLRpdMQO",
+        "App-Token": GLPI_APP_TOKEN,
         "Session-Token": session_token,
         "Content-Type": "application/json"
     }
@@ -319,10 +319,10 @@ def glpi_update_ticket(
     Met à jour le titre ou le contenu d'un ticket GLPI existant.
     """
     # 1. Obtenir un session_token (même logique que précédemment)
-    url_session = "http://localhost:8080/apirest.php/initSession"
+    url_session = f"{GLPI_API_URL}/initSession"
     headers = {
-        "App-Token": "mStHpZsjGQuq7TAmjAD70ZrqacqMXgmRTLRpdMQO",
-        "Authorization": "user_token PIaHf4AUlNpEGJD44shfALJG3txpRNFoHKjYs560"
+        "App-Token": GLPI_APP_TOKEN,
+        "Authorization": f"user_token {GLPI_USER_TOKEN}"
     }
     try:
         response = requests.post(url_session, headers=headers)
@@ -338,7 +338,7 @@ def glpi_update_ticket(
     # 2. Vérification droit : seul admin/support ou créateur du ticket
     url_ticket = f"http://localhost:8080/apirest.php/Ticket/{ticket_id}"
     headers_get = {
-        "App-Token": "mStHpZsjGQuq7TAmjAD70ZrqacqMXgmRTLRpdMQO",
+        "App-Token": GLPI_APP_TOKEN,
         "Session-Token": session_token
     }
     ticket_resp = requests.get(url_ticket, headers=headers_get)
@@ -359,7 +359,7 @@ def glpi_update_ticket(
     # 3. Mise à jour du ticket
     url_update = f"http://localhost:8080/apirest.php/Ticket/{ticket_id}"
     headers_update = {
-        "App-Token": "mStHpZsjGQuq7TAmjAD70ZrqacqMXgmRTLRpdMQO",
+        "App-Token": GLPI_APP_TOKEN,
         "Session-Token": session_token,
         "Content-Type": "application/json"
     }
@@ -380,10 +380,10 @@ def glpi_search_tickets(keyword: str, current_user: User = Depends(get_current_u
     Recherche les tickets dont le titre contient le mot-clé donné.
     """
     # 1. Obtenir un session_token
-    url_session = "http://localhost:8080/apirest.php/initSession"
+    url_session = f"{GLPI_API_URL}/initSession"
     headers = {
-        "App-Token": "mStHpZsjGQuq7TAmjAD70ZrqacqMXgmRTLRpdMQO",
-        "Authorization": "user_token PIaHf4AUlNpEGJD44shfALJG3txpRNFoHKjYs560"
+        "App-Token": GLPI_APP_TOKEN,
+        "Authorization": f"user_token {GLPI_USER_TOKEN}"
     }
     try:
         response = requests.post(url_session, headers=headers)
@@ -397,9 +397,9 @@ def glpi_search_tickets(keyword: str, current_user: User = Depends(get_current_u
         return {"error": f"Erreur lors de l'initSession: {e}"}
 
     # 2. Recherche des tickets
-    url_tickets = "http://localhost:8080/apirest.php/Ticket"
+    url_tickets = f"{GLPI_API_URL}/Ticket"
     headers_tickets = {
-        "App-Token": "mStHpZsjGQuq7TAmjAD70ZrqacqMXgmRTLRpdMQO",
+        "App-Token": GLPI_APP_TOKEN,
         "Session-Token": session_token
     }
     try:
@@ -423,10 +423,10 @@ def glpi_delete_ticket(ticket_id: int, password_glpi: str = Body(None, embed=Tru
     Supprime un ticket GLPI par son id.
     """
     # 1. Obtenir un session_token
-    url_session = "http://localhost:8080/apirest.php/initSession"
+    url_session = f"{GLPI_API_URL}/initSession"
     headers = {
-        "App-Token": "mStHpZsjGQuq7TAmjAD70ZrqacqMXgmRTLRpdMQO",
-        "Authorization": "user_token PIaHf4AUlNpEGJD44shfALJG3txpRNFoHKjYs560"
+        "App-Token": GLPI_APP_TOKEN,
+        "Authorization": f"user_token {GLPI_USER_TOKEN}"
     }
     try:
         response = requests.post(url_session, headers=headers)
@@ -442,7 +442,7 @@ def glpi_delete_ticket(ticket_id: int, password_glpi: str = Body(None, embed=Tru
     # 2. Vérification droit : seul admin/support ou créateur du ticket
     url_ticket = f"http://localhost:8080/apirest.php/Ticket/{ticket_id}"
     headers_get = {
-        "App-Token": "mStHpZsjGQuq7TAmjAD70ZrqacqMXgmRTLRpdMQO",
+        "App-Token": GLPI_APP_TOKEN,
         "Session-Token": session_token
     }
     ticket_resp = requests.get(url_ticket, headers=headers_get)
@@ -488,7 +488,7 @@ def glpi_delete_ticket(ticket_id: int, password_glpi: str = Body(None, embed=Tru
         # Vérification supplémentaire via /Ticket_User/ (sécurité maximale)
         url_ticket_users = f"http://localhost:8080/apirest.php/Ticket_User?tickets_id={ticket_id}"
         headers_get = {
-            "App-Token": "mStHpZsjGQuq7TAmjAD70ZrqacqMXgmRTLRpdMQO",
+            "App-Token": GLPI_APP_TOKEN,
             "Session-Token": session_token
         }
         try:
@@ -507,7 +507,7 @@ def glpi_delete_ticket(ticket_id: int, password_glpi: str = Body(None, embed=Tru
     # 3. Suppression du ticket
     url_delete = f"http://localhost:8080/apirest.php/Ticket/{ticket_id}"
     headers_delete = {
-        "App-Token": "mStHpZsjGQuq7TAmjAD70ZrqacqMXgmRTLRpdMQO",
+        "App-Token": GLPI_APP_TOKEN,
         "Session-Token": session_token
     }
     try:
@@ -528,10 +528,10 @@ def glpi_remind_ticket(
     Seul le demandeur ou un agent support/admin peut relancer.
     """
     # 1. Obtenir un session_token
-    url_session = "http://localhost:8080/apirest.php/initSession"
+    url_session = f"{GLPI_API_URL}/initSession"
     headers = {
-        "App-Token": "mStHpZsjGQuq7TAmjAD70ZrqacqMXgmRTLRpdMQO",
-        "Authorization": "user_token PIaHf4AUlNpEGJD44shfALJG3txpRNFoHKjYs560"
+        "App-Token": GLPI_APP_TOKEN,
+        "Authorization": f"user_token {GLPI_USER_TOKEN}"
     }
     try:
         response = requests.post(url_session, headers=headers)
@@ -547,7 +547,7 @@ def glpi_remind_ticket(
     # 2. Vérifier que l'utilisateur a le droit de relancer (demandeur ou support/admin)
     url_ticket = f"http://localhost:8080/apirest.php/Ticket/{ticket_id}"
     headers_get = {
-        "App-Token": "mStHpZsjGQuq7TAmjAD70ZrqacqMXgmRTLRpdMQO",
+        "App-Token": GLPI_APP_TOKEN,
         "Session-Token": session_token
     }
     ticket_resp = requests.get(url_ticket, headers=headers_get)
@@ -576,7 +576,7 @@ def glpi_remind_ticket(
     # 3. Ajouter un suivi (relance)
     url_followup = "http://localhost:8080/apirest.php/ITILFollowup"
     headers_followup = {
-        "App-Token": "mStHpZsjGQuq7TAmjAD70ZrqacqMXgmRTLRpdMQO",
+        "App-Token": GLPI_APP_TOKEN,
         "Session-Token": session_token,
         "Content-Type": "application/json"
     }

@@ -42,7 +42,7 @@ def send_reset_email(to_email, code):
         print(f"Erreur envoi mail: {e}")
         raise HTTPException(status_code=500, detail="Erreur lors de l'envoi de l'email de réinitialisation")
 
-@router.post("/auth/request-password-reset")
+@router.post("/request-password-reset")
 def request_password_reset(email: str = Body(...)):
     """
     Génère un code de réinitialisation pour l'utilisateur et l'envoie par email.
@@ -56,7 +56,7 @@ def request_password_reset(email: str = Body(...)):
     send_reset_email(email, code)
     return {"message": "Un code de réinitialisation a été envoyé par email."}
 
-@router.post("/auth/reset-password")
+@router.post("/reset-password")
 def reset_password(
     email: str = Body(...),
     reset_code: str = Body(...),
@@ -74,7 +74,7 @@ def reset_password(
     users_collection.update_one({"email": email}, {"$set": {"password": hash_password(new_password)}, "$unset": {"reset_code": "", "reset_code_exp": ""}})
     return {"message": "Mot de passe réinitialisé avec succès."}
 
-@router.post("/auth/register")
+@router.post("/register")
 def register(
     name: str = Body(...),
     email: str = Body(...),
@@ -107,7 +107,7 @@ def register(
 
 
 # Pour extraire le token envoyé par le client
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 # Dépendance pour obtenir l'utilisateur courant à partir du token
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
@@ -128,7 +128,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     return User(**user_data)
 
 # Modifier son propre profil
-@router.patch("/auth/update-me")
+@router.patch("/update-me")
 def update_me(
     name: str = Body(None),
     password: str = Body(None),
@@ -186,7 +186,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     return User(**user_data)
 
 # Endpoint pour obtenir les infos du user connecté
-@router.get("/auth/me")
+@router.get("/me")
 def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 

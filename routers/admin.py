@@ -7,11 +7,11 @@ router = APIRouter()
 db = get_database()
 users_collection = db["users"]
 
-@router.get("/admin/secret")
+@router.get("/secret")
 def admin_secret(current_user=Depends(require_role("admin"))):
     return {"message": f"Bienvenue, admin {current_user.name}! Ceci est une information confidentielle."}
 
-@router.post("/admin/create-user")
+@router.post("/create-user")
 def create_user(
     name: str = Body(...),
     email: str = Body(...),
@@ -36,7 +36,7 @@ def create_user(
     users_collection.insert_one(user_doc)
     return {"message": "Utilisateur créé !", "user": {"name": name, "email": email, "role": role, "status": status}}
 
-@router.patch("/admin/validate-user/{email}")
+@router.patch("/validate-user/{email}")
 def validate_user(email: str, current_user=Depends(require_role("admin"))):
     user = users_collection.find_one({"email": email})
     if not user:
@@ -46,7 +46,7 @@ def validate_user(email: str, current_user=Depends(require_role("admin"))):
     users_collection.update_one({"email": email}, {"$set": {"status": "active"}})
     return {"message": f"Le compte {email} a été validé et activé."}
 
-@router.patch("/admin/update-user/{email}")
+@router.patch("/update-user/{email}")
 def update_user(
     email: str,
     name: str = Body(None),
@@ -73,19 +73,19 @@ def update_user(
     user = users_collection.find_one({"email": email}, {"password": 0})
     return {"message": "Utilisateur modifié !", "user": user}
 
-@router.delete("/admin/delete-user/{email}")
+@router.delete("/delete-user/{email}")
 def delete_user(email: str, current_user=Depends(require_role("admin"))):
     result = users_collection.delete_one({"email": email})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
     return {"message": f"Utilisateur {email} supprimé !"}
 
-@router.get("/admin/users")
+@router.get("/users")
 def list_users(current_user=Depends(require_role("admin"))):
     users = list(users_collection.find({}, {"password": 0}))
     return {"users": users}
 
-@router.get("/admin/user/{email}")
+@router.get("/user/{email}")
 def get_user(email: str, current_user=Depends(require_role("admin"))):
     user = users_collection.find_one({"email": email}, {"password": 0})
     if not user:

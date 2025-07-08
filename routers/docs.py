@@ -13,7 +13,7 @@ documents_collection = db["documents"]
 router = APIRouter()
 
 
-@router.get("/docs/search")
+@router.get("/search")
 def search_documents(
     id: Optional[int] = Query(None),
     keyword: Optional[str] = Query(None),
@@ -41,7 +41,7 @@ def search_documents(
     docs = [doc for doc in cursor if user_role in doc.get("roles_allowed", ["admin", "agent support", "client"])]
     return docs
 
-@router.post("/docs/create")
+@router.post("/create")
 def create_document(
     title: str = Body(...),
     content: str = Body(...),
@@ -60,7 +60,7 @@ def create_document(
     doc = documents_collection.find_one({"id": new_id}, {"_id": 0})
     return doc
 
-@router.put("/docs/update/{doc_id}")
+@router.put("/update/{doc_id}")
 def update_document(
     doc_id: int,
     title: Optional[str] = Body(None),
@@ -92,7 +92,7 @@ def update_document(
     doc = documents_collection.find_one({"id": doc_id}, {"_id": 0})
     return doc
 
-@router.delete("/docs/{doc_id}")
+@router.delete("/{doc_id}")
 def delete_document(doc_id: int, current_user=Depends(require_role("admin"))):
     """
     Supprime un document par son id (admin).

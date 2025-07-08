@@ -31,7 +31,9 @@ def get_embedding(text):
 # Indexation des documents
 for doc in collection.find():
     doc_id = str(doc["_id"])
-    text = doc["title"] + "\n" + doc["content"]
+    title = doc.get("title", doc.get("filename", "")) # Utilise le titre, ou le nom de fichier, ou une chaîne vide
+    content = doc.get("content", "") # Utilise le contenu ou une chaîne vide
+    text = title + "\n" + content
     embedding = get_embedding(text)
     # Ajout dans ChromaDB
     collection_chroma.add(
