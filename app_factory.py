@@ -58,7 +58,7 @@ def create_app():
     app.include_router(health.router, prefix="/health", tags=["Health"])
     app.include_router(auth_router.router, prefix="/auth", tags=["Authentication"])
     app.include_router(admin.router, prefix="/admin", tags=["Admin"])
-    app.include_router(glpi.router, prefix="/glpi", tags=["GLPI"])
+    app.include_router(glpi.router, prefix="/api/glpi", tags=["GLPI"])
     app.include_router(ai.router, prefix="/ai", tags=["AI"])
     app.include_router(analytics.router)
     app.include_router(configuration.router, prefix="/config", tags=["Configuration"])
