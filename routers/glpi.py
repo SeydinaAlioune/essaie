@@ -78,16 +78,32 @@ def get_or_create_glpi_user(session_token, email, name):
         print(f"Erreur de connexion API GLPI (get_or_create_glpi_user): {e}")
         return None
 
-def get_user_ticket_ids(session_token: str, glpi_user_id: int):
-    """Récupère les IDs de tous les tickets d'un utilisateur GLPI."""
+def get_user_ticket_ids(session_token: str, glpi_user_id: int) -> list[int]:
+    """Récupère les IDs de tous les tickets d'un utilisateur GLPI de manière sécurisée."""
     config = load_glpi_config()
-    url = url_joiner(config['GLPI_API_URL'], f'Ticket_User?users_id={glpi_user_id}&type=1')
     headers = {"Session-Token": session_token, "App-Token": config['GLPI_APP_TOKEN']}
+    url = url_joiner(config['GLPI_API_URL'], 'Ticket')
+    params = {
+        'is_deleted': 'false',
+        'range': '0-1000', # Augmenter la portée si nécessaire
+        'criteria[0][field]': 'users_id_recipient',
+        'criteria[0][searchtype]': 'equals',
+        'criteria[0][value]': glpi_user_id,
+        'forcedisplay[0]': 'id' # Optimisation: ne récupérer que le champ ID
+    }
+    
     try:
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, params=params)
         response.raise_for_status()
-        return [tu['tickets_id'] for tu in response.json()]
-    except (requests.exceptions.RequestException, KeyError) as e:
+        tickets = response.json()
+
+        # L'API peut retourner un dictionnaire avec l'ID comme clé, ou une liste.
+        if isinstance(tickets, dict):
+            return [int(k) for k in tickets.keys()]
+        elif isinstance(tickets, list):
+            return [ticket['id'] for ticket in tickets]
+        return []
+    except (requests.exceptions.RequestException, KeyError, TypeError) as e:
         print(f"Impossible de récupérer les tickets de l'utilisateur: {e}")
         return []
 
@@ -105,27 +121,53 @@ def glpi_info(current_user: User = Depends(get_current_admin_user)):
 
 @router.get("/tickets")
 def glpi_list_tickets(current_user: User = Depends(get_current_user)):
-    """Liste les tickets. Les admins/agents voient tout, les autres leurs propres tickets."""
+    """Liste les tickets. Les admins/agents voient tout, les clients ne voient que les leurs."""
     session_token = get_session_token()
     if not session_token:
         raise HTTPException(status_code=503, detail="Connexion à GLPI impossible.")
 
     config = load_glpi_config()
-    url = url_joiner(config['GLPI_API_URL'], 'Ticket?expand_dropdowns=true&range=0-100')
     headers = {"Session-Token": session_token, "App-Token": config['GLPI_APP_TOKEN']}
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        tickets = response.json()
 
-        if current_user.role.value in ["admin", "agent support"]:
-            return tickets
+    try:
+        # Pour les admins et agents, on récupère tous les tickets.
+        if current_user.role.value in ["admin", "agent_support", "agent_interne"]:
+            # Les admins et les agents peuvent voir tous les tickets.
+            url = url_joiner(config['GLPI_API_URL'], 'Ticket')
+            params = {'is_deleted': 'false', 'range': '0-1000'}
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            return response.json()
+
+        # Pour les clients, on applique la méthode sécurisée en 2 étapes.
         else:
+            # Étape 1: Obtenir l'ID de l'utilisateur dans GLPI.
             glpi_user_id = get_or_create_glpi_user(session_token, current_user.email, current_user.name)
             if not glpi_user_id:
-                return []
+                return []  # Pas d'utilisateur, donc pas de tickets.
+
+            # Étape 2: Obtenir la liste des IDs de tickets autorisés pour cet utilisateur.
             user_ticket_ids = get_user_ticket_ids(session_token, glpi_user_id)
-            return [t for t in tickets if t['id'] in user_ticket_ids]
+            if not user_ticket_ids:
+                return []  # Pas de tickets pour cet utilisateur.
+
+            # Étape 3: Récupérer les détails complets UNIQUEMENT pour les tickets autorisés.
+            # Nous devons faire un nouvel appel à l'API GLPI pour obtenir les tickets par leurs IDs.
+            # C'est cette étape qui garantit la sécurité.
+            url = url_joiner(config['GLPI_API_URL'], 'Ticket')
+            params = {
+                'is_deleted': 'false',
+                'range': '0-1000',
+                'criteria[0][field]': 'id',
+                'criteria[0][searchtype]': 'equals',
+                'criteria[0][value]': '|'.join(map(str, user_ticket_ids))
+            }
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            return response.json()
+
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Erreur GLPI: {e}")
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Erreur GLPI: {e}")
 
