@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from routers.auth import require_role
+from dependencies import get_current_admin_user, get_current_user
 from routers.glpi import get_session_token
 from routers.configuration import load_glpi_config
 import requests
@@ -32,7 +32,7 @@ def _get_all_glpi_tickets(session_token: str):
             raise HTTPException(status_code=503, detail="Erreur de communication avec GLPI.")
     return all_tickets
 
-@router.get("/stats", dependencies=[Depends(require_role("admin"))])
+@router.get("/stats", dependencies=[Depends(get_current_admin_user)])
 def get_main_stats():
     """
     Fournit les statistiques clés pour le dashboard.
@@ -79,7 +79,7 @@ STOP_WORDS = set([
     "probleme", "ticket", "demande", "aide", "support", "bonjour", "merci", "svp", "stp", "urgent"
 ])
 
-@router.get("/recurring-issues", dependencies=[Depends(require_role("admin"))])
+@router.get("/recurring-issues", dependencies=[Depends(get_current_admin_user)])
 def get_recurring_issues(days: int = 30):
     """
     Analyse les titres des tickets sur une période donnée (par défaut 30 jours)
@@ -155,7 +155,7 @@ def _call_llm_for_summary(context: str):
         print(f"Erreur LLM: {e}")
         raise HTTPException(status_code=503, detail="Le service de résumé est indisponible.")
 
-@router.get("/ticket-summary/{ticket_id}", dependencies=[Depends(require_role("admin"))])
+@router.get("/ticket-summary/{ticket_id}", dependencies=[Depends(get_current_admin_user)])
 def get_ticket_summary(ticket_id: int):
     """
     Génère un résumé intelligent d'un ticket spécifique en utilisant un LLM.

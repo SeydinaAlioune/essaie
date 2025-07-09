@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Body, Depends, HTTPException
-from models.user import User
-from routers.auth import get_current_user, require_role
+from models import User
+from dependencies import get_current_user, get_current_admin_user
 from routers.configuration import load_glpi_config
 import requests
 
@@ -78,9 +78,9 @@ def get_user_ticket_ids(session_token: str, glpi_user_id: int):
 def glpi_ping():
     return {"message": "GLPI route opérationnelle !"}
 
-@router.get("/info", dependencies=[Depends(require_role("admin"))])
-def glpi_info():
-    """Retourne les infos de configuration GLPI (URL seulement)."""
+@router.get("/info", dependencies=[Depends(get_current_admin_user)])
+def glpi_info(current_user: User = Depends(get_current_admin_user)):
+    """Retourne les infos de configuration GLPI (URL seulement). Route protégée pour admin."""
     config = load_glpi_config()
     return {"GLPI_API_URL": config.get("GLPI_API_URL")}
 
@@ -99,7 +99,7 @@ def glpi_list_tickets(current_user: User = Depends(get_current_user)):
         response.raise_for_status()
         tickets = response.json()
 
-        if current_user.role in ["admin", "agent support"]:
+        if current_user.role.value in ["admin", "agent support"]:
             return tickets
         else:
             glpi_user_id = get_or_create_glpi_user(session_token, current_user.email, current_user.name)
@@ -147,7 +147,7 @@ def glpi_get_ticket(ticket_id: int, current_user: User = Depends(get_current_use
         response.raise_for_status()
         ticket = response.json()
 
-        if current_user.role not in ["admin", "agent support"]:
+        if current_user.role.value not in ["admin", "agent support"]:
             glpi_user_id = get_or_create_glpi_user(session_token, current_user.email, current_user.name)
             user_ticket_ids = get_user_ticket_ids(session_token, glpi_user_id)
             if ticket_id not in user_ticket_ids:

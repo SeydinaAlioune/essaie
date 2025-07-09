@@ -1,17 +1,14 @@
 import os
 import json
 import fitz  # PyMuPDF
-from pymongo import MongoClient
-from datetime import datetime
+from sqlalchemy.orm import Session
+from models import Document
 
-# Connexion à MongoDB
-client = MongoClient("mongodb://localhost:27017/")
-db = client["mcp_backend"]
-doc_collection = db["documents"]
 
-def parse_and_insert_document(file_path: str, filename: str):
+def parse_and_insert_document(db: Session, file_path: str, filename: str):
     """
-    Analyse un fichier (PDF ou JSON), extrait son contenu et l'insère dans MongoDB.
+    Analyse un fichier (PDF ou JSON), crée un objet Document SQLAlchemy et l'insère en base.
+    Lève une ValueError en cas d'erreur.
     """
     try:
         if filename.endswith(".pdf"):
@@ -21,13 +18,10 @@ def parse_and_insert_document(file_path: str, filename: str):
                     content += page.get_text()
             
             document_data = {
-                "filename": filename,
                 "title": os.path.splitext(filename)[0].replace('_', ' ').capitalize(),
                 "content": content,
-                "category": "Documentation",
-                "tags": ["pdf", "upload"],
-                "source_file": filename,
-                "date": datetime.utcnow()
+                "category": "Documentation PDF",
+                "roles_allowed": ["admin", "support", "agent"]  # Rôles par défaut pour KB
             }
 
         elif filename.endswith(".json"):
@@ -35,19 +29,21 @@ def parse_and_insert_document(file_path: str, filename: str):
                 data = json.load(f)
             
             document_data = {
-                "filename": filename,
                 "title": data.get("title", filename),
                 "content": data.get("content", "Contenu non fourni"),
-                "category": data.get("category", "Catégorie non fournie"),
-                "tags": data.get("tags", []),
-                "source_file": filename,
-                "date": datetime.utcnow()
+                "category": data.get("category", "Documentation JSON"),
+                "roles_allowed": data.get("roles_allowed", ["admin", "support", "agent"])
             }
         else:
             raise ValueError("Type de fichier non supporté")
 
-        doc_collection.insert_one(document_data)
-        return True, f"Document '{filename}' inséré avec succès dans MongoDB."
+        # Créer et insérer le document via SQLAlchemy
+        new_document = Document(**document_data)
+        db.add(new_document)
+        db.commit()
+        db.refresh(new_document)
+        return new_document
 
     except Exception as e:
-        return False, f"Erreur lors du traitement du fichier '{filename}': {e}"
+        # Propage l'exception pour que le routeur puisse la gérer
+        raise ValueError(f"Erreur lors du traitement du fichier '{filename}': {e}") from e

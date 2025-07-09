@@ -1,36 +1,14 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from routers import health, glpi, docs, auth, admin, ai, configuration, knowledge_base, analytics
+# main.py: Point d'entrée pour le serveur uvicorn.
+# Ce fichier importe l'application créée par l'app factory
+# et s'assure que les tables de la base de données sont créées.
 
-app = FastAPI()
+from database import engine, Base
+import models  # Importer les modèles pour qu'ils soient enregistrés par Base
+from app_factory import create_app
 
-# Configuration CORS
-origins = ["*"]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Crée toutes les tables dans la base de données (ex: 'users')
+# C'est une opération idempotente : elle ne recréera pas les tables si elles existent déjà.
+Base.metadata.create_all(bind=engine)
 
-# Inclure les routeurs
-# Routes publiques
-app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
-app.include_router(glpi.router, prefix="/api/glpi", tags=["glpi"])
-app.include_router(health.router, prefix="/api/health", tags=["health"])
-app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
-app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
+app = create_app()
 
-# Routes d'administration
-app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
-app.include_router(configuration.router, prefix="/api/admin/config", tags=["config"])
-app.include_router(knowledge_base.router, prefix="/api/admin/kb", tags=["knowledge_base"])
-
-# Route pour la documentation (généralement non préfixée par /api)
-app.include_router(docs.router, prefix="/docs", tags=["docs"])
-
-##endpoint “/”
-@app.get("/")
-def read_root():
-    return {"message": "Bienvenue sur le MCP backend !"}

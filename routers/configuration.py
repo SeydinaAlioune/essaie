@@ -1,6 +1,6 @@
 import json
 from fastapi import APIRouter, Depends, HTTPException
-from routers.auth import require_role
+from dependencies import get_current_admin_user
 
 CONFIG_FILE = "config.json"
 
@@ -22,7 +22,7 @@ def save_glpi_config(config_data):
     with open(CONFIG_FILE, 'w') as f:
         json.dump(config_data, f, indent=2)
 
-@router.get("/glpi", dependencies=[Depends(require_role("admin"))])
+@router.get("/glpi", dependencies=[Depends(get_current_admin_user)])
 def get_glpi_config():
     """
     Récupère la configuration GLPI actuelle. Pour la sécurité, le token n'est pas retourné.
@@ -31,7 +31,7 @@ def get_glpi_config():
     # Ne jamais exposer les tokens via une API GET
     return {"GLPI_API_URL": config.get("GLPI_API_URL")}
 
-@router.post("/glpi", dependencies=[Depends(require_role("admin"))])
+@router.post("/glpi", dependencies=[Depends(get_current_admin_user)])
 def update_glpi_config(new_config: dict):
     """
     Met à jour la configuration GLPI.
@@ -51,7 +51,7 @@ def update_glpi_config(new_config: dict):
     
     return {"message": "Configuration GLPI mise à jour avec succès."}
 
-@router.get("/middleware", dependencies=[Depends(require_role("admin"))])
+@router.get("/middleware", dependencies=[Depends(get_current_admin_user)])
 def get_middleware_config():
     """
     Récupère la configuration actuelle du middleware (niveau de log, cache).
@@ -63,7 +63,7 @@ def get_middleware_config():
         "cache_enabled": False
     })
 
-@router.post("/middleware", dependencies=[Depends(require_role("admin"))])
+@router.post("/middleware", dependencies=[Depends(get_current_admin_user)])
 def update_middleware_config(new_config: dict):
     """
     Met à jour la configuration du middleware.

@@ -1,103 +1,79 @@
-from fastapi import APIRouter, HTTPException, Query, Body, Depends
-from typing import Optional
-from db import get_database
-from datetime import datetime
-from routers.auth import get_current_user
-from routers.admin import require_role
+from fastapi import APIRouter, HTTPException, Query, Depends, status
+from typing import Optional, List
+from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
-# Connexion à la base MongoDB  accès à la collection "documents"
-db = get_database()
-#permet l'accès à la collection "documents"
-documents_collection = db["documents"]
+import models
+import schemas
+from database import get_db
+from dependencies import get_current_user, get_current_admin_user
 
 router = APIRouter()
 
-
-@router.get("/search")
+@router.get("/search", summary="Rechercher des documents", response_model=List[schemas.Document])
 def search_documents(
-    id: Optional[int] = Query(None),
-    keyword: Optional[str] = Query(None),
-    category: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+    keyword: Optional[str] = Query(None, description="Mot-clé dans le titre ou le contenu"),
+    category: Optional[str] = Query(None, description="Filtrer par catégorie"),
     skip: int = Query(0, ge=0),
-    limit: int = Query(10, ge=1, le=100),
-    current_user=Depends(get_current_user)
+    limit: int = Query(10, ge=1, le=100)
 ):
-    # Recherche accessible à tous les utilisateurs connectés, mais filtrage selon roles_allowed
-    user_role = getattr(current_user, "role", None)
-    if id is not None:
-        doc = documents_collection.find_one({"id": id}, {"_id": 0})
-        if doc and user_role in doc.get("roles_allowed", ["admin", "agent support", "client"]):
-            return [doc]
-        return []
-    query = {}
+    query = db.query(models.Document)
+
+    # Filtrer par rôle : l'utilisateur ne voit que les documents autorisés pour son rôle
+    query = query.filter(models.Document.roles_allowed.contains([current_user.role.value]))
+
     if keyword:
-        query["$or"] = [
-            {"title": {"$regex": keyword, "$options": "i"}},
-            {"content": {"$regex": keyword, "$options": "i"}}
-        ]
+        query = query.filter(or_(models.Document.title.ilike(f"%{keyword}%"), models.Document.content.ilike(f"%{keyword}%")))
+    
     if category:
-        query["category"] = {"$regex": f"^{category}$", "$options": "i"}
-    cursor = documents_collection.find(query, {"_id": 0}).skip(skip).limit(limit)
-    docs = [doc for doc in cursor if user_role in doc.get("roles_allowed", ["admin", "agent support", "client"])]
-    return docs
+        query = query.filter(models.Document.category.ilike(f"%{category}%"))
 
-@router.post("/create")
+    documents = query.offset(skip).limit(limit).all()
+    return documents
+
+@router.post("/create", summary="Créer un nouveau document", status_code=status.HTTP_201_CREATED, response_model=schemas.Document)
 def create_document(
-    title: str = Body(...),
-    content: str = Body(...),
-    category: str = Body(...),
-    roles_allowed: list = Body(["admin", "agent support", "client"]),
-    current_user=Depends(require_role("admin"))
+    doc: schemas.DocumentCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user)
 ):
-    """
-    Crée un nouveau document (admin). 'roles_allowed' détermine qui peut le voir.
-    """
-    last_doc = documents_collection.find_one(sort=[("id", -1)])
-    new_id = last_doc["id"] + 1 if last_doc else 1
-    date_creation = datetime.utcnow().isoformat()
-    new_doc = {"id": new_id, "title": title, "content": content, "category": category, "date_creation": date_creation, "roles_allowed": roles_allowed}
-    documents_collection.insert_one(new_doc)
-    doc = documents_collection.find_one({"id": new_id}, {"_id": 0})
-    return doc
+    new_doc = models.Document(**doc.dict())
+    db.add(new_doc)
+    db.commit()
+    db.refresh(new_doc)
+    return new_doc
 
-@router.put("/update/{doc_id}")
+@router.put("/update/{doc_id}", summary="Mettre à jour un document", response_model=schemas.Document)
 def update_document(
     doc_id: int,
-    title: Optional[str] = Body(None),
-    content: Optional[str] = Body(None),
-    category: Optional[str] = Body(None),
-    roles_allowed: Optional[list] = Body(None),
-    current_user=Depends(require_role("admin"))
+    doc_update: schemas.DocumentBase,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user)
 ):
-    """
-    Met à jour un document existant (admin). Peut modifier les rôles autorisés.
-    """
-    update_fields = {}
-    if title is not None:
-        update_fields["title"] = title
-    if content is not None:
-        update_fields["content"] = content
-    if category is not None:
-        update_fields["category"] = category
-    if roles_allowed is not None:
-        update_fields["roles_allowed"] = roles_allowed
-    if not update_fields:
-        raise HTTPException(status_code=400, detail="Aucune donnée à mettre à jour.")
-    result = documents_collection.update_one(
-        {"id": doc_id},
-        {"$set": update_fields}
-    )
-    if result.matched_count == 0:
+    db_doc = db.query(models.Document).filter(models.Document.id == doc_id).first()
+    if not db_doc:
         raise HTTPException(status_code=404, detail="Document non trouvé")
-    doc = documents_collection.find_one({"id": doc_id}, {"_id": 0})
-    return doc
 
-@router.delete("/{doc_id}")
-def delete_document(doc_id: int, current_user=Depends(require_role("admin"))):
-    """
-    Supprime un document par son id (admin).
-    """
-    deleted_doc = documents_collection.find_one_and_delete({"id": doc_id}, projection={"_id": 0})
-    if deleted_doc:
-        return {"message": "Document supprimé", "document": deleted_doc}
-    raise HTTPException(status_code=404, detail="Document non trouvé")
+    update_data = doc_update.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_doc, key, value)
+
+    db.commit()
+    db.refresh(db_doc)
+    return db_doc
+
+@router.delete("/{doc_id}", summary="Supprimer un document", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user)
+):
+    db_doc = db.query(models.Document).filter(models.Document.id == doc_id).first()
+    if not db_doc:
+        raise HTTPException(status_code=404, detail="Document non trouvé")
+    
+    db.delete(db_doc)
+    db.commit()
+    return

@@ -1,93 +1,99 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
-from routers.auth import require_role
-from db import get_database
-from auth import hash_password
+from sqlalchemy.orm import Session
+from typing import List
+
+from dependencies import get_current_admin_user, hash_password
+from database import get_db
+import models
+import schemas
 
 router = APIRouter()
-db = get_database()
-users_collection = db["users"]
 
-@router.get("/secret")
-def admin_secret(current_user=Depends(require_role("admin"))):
+@router.get("/secret", summary="Endpoint secret pour admin")
+def admin_secret(current_user: models.User = Depends(get_current_admin_user)):
     return {"message": f"Bienvenue, admin {current_user.name}! Ceci est une information confidentielle."}
 
-@router.post("/create-user")
+@router.post("/users", summary="Créer un nouvel utilisateur", response_model=schemas.User, status_code=201)
 def create_user(
-    name: str = Body(...),
-    email: str = Body(...),
-    password: str = Body(...),
-    role: str = Body(..., description="admin, support, agent, client"),
-    status: str = Body("active", description="active, pending, blocked, rejected"),
-    current_user=Depends(require_role("admin"))
+    user: schemas.UserCreate,
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(get_current_admin_user)
 ):
-    if users_collection.find_one({"email": email}):
+    db_user = db.query(models.User).filter(models.User.email == user.email).first()
+    if db_user:
         raise HTTPException(status_code=400, detail="Email déjà utilisé")
-    if role not in ["admin", "agent support", "client"]:
-        raise HTTPException(status_code=400, detail="Rôle invalide")
-    if status not in ["active", "pending", "blocked", "rejected"]:
-        raise HTTPException(status_code=400, detail="Statut invalide")
-    user_doc = {
-        "name": name,
-        "email": email,
-        "password": hash_password(password),
-        "role": role,
-        "status": status
-    }
-    users_collection.insert_one(user_doc)
-    return {"message": "Utilisateur créé !", "user": {"name": name, "email": email, "role": role, "status": status}}
+    
+    hashed_pwd = hash_password(user.password)
+    new_user = models.User(**user.dict(exclude={'password'}), hashed_password=hashed_pwd)
+    
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
 
-@router.patch("/validate-user/{email}")
-def validate_user(email: str, current_user=Depends(require_role("admin"))):
-    user = users_collection.find_one({"email": email})
-    if not user:
-        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
-    if user.get("status") != "pending":
-        raise HTTPException(status_code=400, detail="Le compte n'est pas en attente de validation")
-    users_collection.update_one({"email": email}, {"$set": {"status": "active"}})
-    return {"message": f"Le compte {email} a été validé et activé."}
-
-@router.patch("/update-user/{email}")
-def update_user(
-    email: str,
-    name: str = Body(None),
-    role: str = Body(None),
-    status: str = Body(None),
-    current_user=Depends(require_role("admin"))
+@router.patch("/users/{user_id}/status", summary="Modifier le statut d'un utilisateur", response_model=schemas.User)
+def update_user_status(
+    user_id: int,
+    status: schemas.UserStatus = Body(..., embed=True),
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(get_current_admin_user)
 ):
-    update_fields = {}
-    if name:
-        update_fields["name"] = name
-    if role:
-        if role not in ["admin", "agent support", "client"]:
-            raise HTTPException(status_code=400, detail="Rôle invalide")
-        update_fields["role"] = role
-    if status:
-        if status not in ["active", "pending", "blocked", "rejected"]:
-            raise HTTPException(status_code=400, detail="Statut invalide")
-        update_fields["status"] = status
-    if not update_fields:
-        raise HTTPException(status_code=400, detail="Aucune donnée à mettre à jour")
-    result = users_collection.update_one({"email": email}, {"$set": update_fields})
-    if result.matched_count == 0:
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
         raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
-    user = users_collection.find_one({"email": email}, {"password": 0})
-    return {"message": "Utilisateur modifié !", "user": user}
+    
+    db_user.status = status
+    db.commit()
+    db.refresh(db_user)
+    return db_user
 
-@router.delete("/delete-user/{email}")
-def delete_user(email: str, current_user=Depends(require_role("admin"))):
-    result = users_collection.delete_one({"email": email})
-    if result.deleted_count == 0:
+@router.put("/users/{user_id}", summary="Mettre à jour un utilisateur", response_model=schemas.User)
+def update_user(
+    user_id: int,
+    user: schemas.UserBase,
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(get_current_admin_user)
+):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
         raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
-    return {"message": f"Utilisateur {email} supprimé !"}
 
-@router.get("/users")
-def list_users(current_user=Depends(require_role("admin"))):
-    users = list(users_collection.find({}, {"password": 0}))
-    return {"users": users}
+    update_data = user.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_user, key, value)
 
-@router.get("/user/{email}")
-def get_user(email: str, current_user=Depends(require_role("admin"))):
-    user = users_collection.find_one({"email": email}, {"password": 0})
-    if not user:
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+@router.delete("/users/{user_id}", summary="Supprimer un utilisateur", status_code=204)
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(get_current_admin_user)
+):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
         raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
-    return {"user": user}
+    
+    db.delete(db_user)
+    db.commit()
+    return
+
+@router.get("/users", summary="Lister tous les utilisateurs", response_model=List[schemas.User])
+def list_users(
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(get_current_admin_user)
+):
+    return db.query(models.User).all()
+
+@router.get("/users/{user_id}", summary="Obtenir un utilisateur par son ID", response_model=schemas.User)
+def get_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(get_current_admin_user)
+):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+    return db_user

@@ -8,3 +8,4 @@ pymongo
 python-multipart
 sentence-transformers
 chromadb
+sqlalchemy
