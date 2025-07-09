@@ -35,10 +35,10 @@ def create_app():
 
     # Configuration CORS
     origins = [
+        "http://localhost:5173",  # Frontend Vite/React
+        "http://localhost:3000",  # Autre port de développement frontend possible
+        "http://localhost:8080",  # GLPI local
         "http://localhost",
-        "http://localhost:3000", # Adresse typique pour un frontend React en développement
-        "http://localhost:8080",
-        "http://localhost:5173", # Adresse typique pour un frontend Vite en développement
     ]
 
     app.add_middleware(
@@ -60,7 +60,7 @@ def create_app():
     app.include_router(admin.router, prefix="/admin", tags=["Admin"])
     app.include_router(glpi.router, prefix="/glpi", tags=["GLPI"])
     app.include_router(ai.router, prefix="/ai", tags=["AI"])
-    app.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
+    app.include_router(analytics.router)
     app.include_router(configuration.router, prefix="/config", tags=["Configuration"])
     app.include_router(docs.router, prefix="/docs-api", tags=["Documents"])
     app.include_router(knowledge_base.router, prefix="/kb", tags=["Knowledge Base"])

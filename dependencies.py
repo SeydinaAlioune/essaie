@@ -72,3 +72,14 @@ def get_current_admin_user(current_user: User = Depends(get_current_user)) -> Us
             detail="L'opération nécessite des privilèges d'administrateur"
         )
     return current_user
+
+def get_current_agent_or_admin_user(current_user: User = Depends(get_current_user)) -> User:
+    """Vérifie que l'utilisateur actuel est un agent (support ou interne) ou un administrateur."""
+    allowed_roles = ["admin", "agent_support", "agent_interne"]
+    if current_user.role.value not in allowed_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="L'opération nécessite des privilèges d'agent ou d'administrateur"
+        )
+    return current_user
+
