@@ -29,53 +29,68 @@ def get_session_token():
         print(f"Erreur get_session_token: {e}")
         return None
 
-def get_or_create_glpi_user(session_token, email, name):
-    """Récupère ou crée un utilisateur dans GLPI et retourne son ID."""
+def get_or_create_glpi_user(session_token, email, name, password=None, role=None):
+    """
+    Cherche un utilisateur GLPI par email. Si non trouvé, le crée avec le mot de passe et le profil correspondant au rôle. Retourne l'id GLPI.
+    """
     config = load_glpi_config()
     headers = {"Session-Token": session_token, "App-Token": config['GLPI_APP_TOKEN']}
-    
-    # 1. Chercher l'utilisateur par email de manière précise
+
+    # 1. Chercher l'utilisateur par email
+    url = url_joiner(config['GLPI_API_URL'], f'User?searchText={email}')
     try:
-        # Utilisation de critères de recherche pour une correspondance exacte sur l'email
-        search_url = url_joiner(config['GLPI_API_URL'], f'User?criteria[0][field]=email&criteria[0][searchtype]=equals&criteria[0][value]={email}')
-        resp = requests.get(search_url, headers=headers)
-        resp.raise_for_status()
-        users = resp.json()
-        if users and len(users) > 0:
-            # Si l'utilisateur est trouvé, retourner son ID
-            return users[0]["id"]
-    except requests.exceptions.RequestException as e:
-        print(f"Avertissement: La recherche d'utilisateur GLPI a échoué: {e}")
+        response = requests.get(url, headers=headers)
+        users = response.json()
+        email_clean = (email or '').strip().lower()
+        if isinstance(users, list) and users:
+            for user in users:
+                user_email = (user.get("email", "") or '').strip().lower()
+                user_name = (user.get("name", "") or '').strip().lower()
+                if user_email == email_clean or user_name == email_clean:
+                    return user["id"]
+    except Exception as e:
+        print(f"[DEBUG USER] Erreur recherche utilisateur : {e}")
 
-    # 2. Si non trouvé, le créer
+    # 2. Si non trouvé, créer l'utilisateur
+    role_to_profile = {
+        "admin": 4,         # exemple: 4 = admin dans GLPI
+        "support": 3,       # exemple: 3 = support
+        "agent support": 3, # idem support
+        "client": 2         # exemple: 2 = self-service
+    }
+    profiles_id = role_to_profile.get(role, 2)  # défaut: self-service
+
+    payload = {
+        "input": {
+            "name": email,  # Pour garantir la recherche future
+            "realname": name,  # Affichage humain
+            "password": password if password else "TempPass#2025",
+            "email": email,  # Toujours renseigner l'email
+            "profiles_id": profiles_id,
+            "entities_id": 0,
+            "is_active": 1
+        }
+    }
     try:
-        url_create = url_joiner(config['GLPI_API_URL'], 'User')
-        parts = name.split(' ', 1)
-        firstname = parts[0]
-        realname = parts[1] if len(parts) > 1 else firstname
-
-        # Utiliser la partie locale de l'email comme nom d'utilisateur pour garantir l'unicité et la validité
-        username = email.split('@')[0]
-
-        user_data = {"input": {
-            "name": username,
-            "email": email,
-            "firstname": firstname,
-            "realname": realname,
-            "entities_id": 0, 
-            "profiles_id": 4, 
-            "password": "Password@123"
-        }}
-        create_response = requests.post(url_create, headers=headers, json=user_data)
-        create_response.raise_for_status()
-        user = create_response.json()
-        return user.get("id")
-    except requests.exceptions.HTTPError as e:
-        print(f"Erreur HTTP API GLPI (get_or_create_glpi_user): {e}")
-        print(f"Réponse de GLPI: {e.response.text}")
-        return None
-    except requests.exceptions.RequestException as e:
-        print(f"Erreur de connexion API GLPI (get_or_create_glpi_user): {e}")
+        resp = requests.post(url_joiner(config['GLPI_API_URL'], 'User'), headers=headers, json=payload)
+        user = resp.json()
+        if isinstance(user, dict) and "id" in user:
+            return user.get("id")
+        elif isinstance(user, list) and "existe déjà" in str(user).lower():
+            print("[DEBUG USER] Erreur création GLPI (existe déjà), relance la recherche GET pour récupérer l'ID...")
+            resp = requests.get(url_joiner(config['GLPI_API_URL'], 'User'), headers=headers)
+            users = resp.json()
+            email_clean = (email or '').strip().lower()
+            for user_item in users:
+                user_email = (user_item.get("email", "") or '').strip().lower()
+                if user_email == email_clean:
+                    return user_item["id"]
+            raise Exception("Un utilisateur GLPI existe déjà avec cet email, mais il n'est pas visible.")
+        else:
+            print(f"Erreur inattendue lors de la création de l'utilisateur GLPI: {user}")
+            return None
+    except Exception as e:
+        print(f"Exception lors de la création de l'utilisateur GLPI: {e}")
         return None
 
 def get_user_ticket_ids(session_token: str, glpi_user_id: int) -> list[int]:
@@ -171,16 +186,15 @@ def glpi_list_tickets(current_user: User = Depends(get_current_user)):
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Erreur GLPI: {e}")
 
-@router.post("/tickets")
-def glpi_create_ticket(title: str = Body(..., embed=True), content: str = Body(..., embed=True), current_user: User = Depends(get_current_user)):
-    """Crée un nouveau ticket dans GLPI."""
+def _create_ticket_internal(title: str, content: str, user: User):
+    """Logique interne pour créer un ticket GLPI. Peut être appelée par d'autres parties du backend."""
     session_token = get_session_token()
     if not session_token:
-        raise HTTPException(status_code=503, detail="Connexion à GLPI impossible.")
+        return {"success": False, "error": "Connexion à GLPI impossible."}
 
-    glpi_user_id = get_or_create_glpi_user(session_token, current_user.email, current_user.name)
+    glpi_user_id = get_or_create_glpi_user(session_token, user.email, user.name, role=user.role)
     if not glpi_user_id:
-        raise HTTPException(status_code=404, detail=f"Utilisateur GLPI non trouvé pour {current_user.email}")
+        return {"success": False, "error": f"Utilisateur GLPI non trouvé pour {user.email}"}
 
     config = load_glpi_config()
     url = url_joiner(config['GLPI_API_URL'], 'Ticket')
@@ -189,9 +203,17 @@ def glpi_create_ticket(title: str = Body(..., embed=True), content: str = Body(.
     try:
         response = requests.post(url, headers=headers, json=ticket_data)
         response.raise_for_status()
-        return response.json()
+        return {"success": True, "ticket": response.json()}
     except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=500, detail=f"Erreur création ticket GLPI: {e}")
+        return {"success": False, "error": f"Erreur création ticket GLPI: {e}"}
+
+@router.post("/tickets")
+def glpi_create_ticket(title: str = Body(..., embed=True), content: str = Body(..., embed=True), current_user: User = Depends(get_current_user)):
+    """Crée un nouveau ticket dans GLPI via la route API."""
+    result = _create_ticket_internal(title=title, content=content, user=current_user)
+    if not result["success"]:
+        raise HTTPException(status_code=500, detail=result["error"])
+    return result["ticket"]
 
 @router.get("/tickets/{ticket_id}")
 def glpi_get_ticket(ticket_id: int, current_user: User = Depends(get_current_user)):
