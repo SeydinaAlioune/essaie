@@ -6,7 +6,8 @@ import enum
 # Cela garantit que seules les valeurs prédéfinies peuvent être utilisées.
 class UserRole(str, enum.Enum):
     admin = "admin"
-    agent = "agent"
+    agent_support = "agent_support"
+    agent_interne = "agent_interne"
     client = "client"
 
 class UserStatus(str, enum.Enum):

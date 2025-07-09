@@ -5,10 +5,10 @@ from datetime import datetime
 
 # Enum pour les rôles et statuts, miroir de models.py
 class UserRole(str, Enum):
-    admin = "admin"
-    support = "support"
-    agent = "agent"
-    client = "client"
+    admin = "admin"                 # Administrateur Système
+    agent_support = "agent_support"   # Agent du service support
+    agent_interne = "agent_interne"   # Autres agents internes
+    client = "client"                 # Client externe
 
 class UserStatus(str, Enum):
     active = "active"
@@ -21,7 +21,7 @@ class UserBase(BaseModel):
     name: str
     email: str
     role: UserRole
-    status: UserStatus
+    status: UserStatus = UserStatus.pending
 
 # Schéma pour la création d'utilisateur (inclut le mot de passe)
 class UserCreate(UserBase):
@@ -33,6 +33,10 @@ class User(UserBase):
 
     class Config:
         from_attributes = True
+
+# Schéma pour la mise à jour du rôle
+class UserRoleUpdate(BaseModel):
+    role: UserRole
 
 # --- Schémas pour les Documents ---
 
