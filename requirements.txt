@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 requests
-passlib[bcrypt] ##pour hacher les mots de passe
+passlib[bcrypt]
 python-jose
 email-validator
 pymongo

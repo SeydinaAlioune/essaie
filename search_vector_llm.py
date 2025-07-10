@@ -19,8 +19,9 @@ OLLAMA_URL = "http://localhost:11434/api/generate"  # API locale Ollama
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3:8b")
 TOP_K = 3
 
-# Chemin absolu pour la base ChromaDB
-CHROMA_PATH = os.path.abspath("chroma_data")
+# Chemin absolu et robuste pour la base ChromaDB
+script_dir = os.path.dirname(os.path.abspath(__file__))
+CHROMA_PATH = os.path.join(script_dir, "chroma_data")
 print("Chemin absolu de chroma_data (recherche+LLM):", CHROMA_PATH)
 
 model = SentenceTransformer('all-MiniLM-L6-v2')

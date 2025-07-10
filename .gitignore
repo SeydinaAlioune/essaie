@@ -24,6 +24,9 @@ dist/
 *.bak
 *.swp
 
+# Documents
+*.rtf
+
 # Rapports de test et de couverture
 .coverage
 htmlcov/

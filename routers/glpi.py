@@ -93,47 +93,6 @@ def get_or_create_glpi_user(session_token, email, name, password=None, role=None
         print(f"Exception lors de la création de l'utilisateur GLPI: {e}")
         return None
 
-def get_user_ticket_ids(session_token: str, glpi_user_id: int) -> list[int]:
-    """Récupère les IDs de tous les tickets d'un utilisateur GLPI de manière sécurisée."""
-    config = load_glpi_config()
-    headers = {"Session-Token": session_token, "App-Token": config['GLPI_APP_TOKEN']}
-    url = url_joiner(config['GLPI_API_URL'], 'Ticket')
-    params = {
-        'is_deleted': 'false',
-        'range': '0-1000', # Augmenter la portée si nécessaire
-        'criteria[0][field]': 'users_id_recipient',
-        'criteria[0][searchtype]': 'equals',
-        'criteria[0][value]': glpi_user_id,
-        'forcedisplay[0]': 'id' # Optimisation: ne récupérer que le champ ID
-    }
-    
-    try:
-        response = requests.get(url, headers=headers, params=params)
-        response.raise_for_status()
-        tickets = response.json()
-
-        # L'API peut retourner un dictionnaire avec l'ID comme clé, ou une liste.
-        if isinstance(tickets, dict):
-            return [int(k) for k in tickets.keys()]
-        elif isinstance(tickets, list):
-            return [ticket['id'] for ticket in tickets]
-        return []
-    except (requests.exceptions.RequestException, KeyError, TypeError) as e:
-        print(f"Impossible de récupérer les tickets de l'utilisateur: {e}")
-        return []
-
-# --- Endpoints Publics ---
-
-@router.get("/ping")
-def glpi_ping():
-    return {"message": "GLPI route opérationnelle !"}
-
-@router.get("/info", dependencies=[Depends(get_current_admin_user)])
-def glpi_info(current_user: User = Depends(get_current_admin_user)):
-    """Retourne les infos de configuration GLPI (URL seulement). Route protégée pour admin."""
-    config = load_glpi_config()
-    return {"GLPI_API_URL": config.get("GLPI_API_URL")}
-
 @router.get("/tickets")
 def glpi_list_tickets(current_user: User = Depends(get_current_user)):
     """Liste les tickets. Les admins/agents voient tout, les clients ne voient que les leurs."""
@@ -143,51 +102,46 @@ def glpi_list_tickets(current_user: User = Depends(get_current_user)):
 
     config = load_glpi_config()
     headers = {"Session-Token": session_token, "App-Token": config['GLPI_APP_TOKEN']}
-
+    url = url_joiner(config['GLPI_API_URL'], 'Ticket')
     try:
-        # Pour les admins et agents, on récupère tous les tickets.
-        if current_user.role.value in ["admin", "agent_support", "agent_interne"]:
-            # Les admins et les agents peuvent voir tous les tickets.
-            url = url_joiner(config['GLPI_API_URL'], 'Ticket')
-            params = {'is_deleted': 'false', 'range': '0-1000'}
-            response = requests.get(url, headers=headers, params=params)
-            response.raise_for_status()
-            return response.json()
+        # Fusion des paramètres pour inclure `forcedisplay`
+        params = {
+            'is_deleted': 'false',
+            'range': '0-1000',
+            'expand_dropdowns': 'true',
+            'forcedisplay[0]': '_users_id_requester'
+        }
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        all_tickets = response.json()
 
-        # Pour les clients, on applique la méthode sécurisée en 2 étapes.
+        # Si l'utilisateur n'est pas un admin ou un agent, filtrer les tickets.
+        if current_user.role.value not in ["admin", "agent_support", "agent_interne"]:
+            # CONTOURNEMENT: Filtre les tickets en lisant l'email dans le contenu
+            user_tickets = []
+            email_header_prefix = "Email du demandeur: "
+            for ticket in all_tickets:
+                content = ticket.get('content', '')
+                if content.startswith(email_header_prefix):
+                    try:
+                        # Extrait la première ligne et l'email
+                        first_line = content.splitlines()[0]
+                        extracted_email = first_line[len(email_header_prefix):].strip()
+                        if extracted_email == current_user.email:
+                            user_tickets.append(ticket)
+                    except (IndexError, ValueError):
+                        # Ignore les tickets où l'extraction échoue
+                        continue
+            return user_tickets
         else:
-            # Étape 1: Obtenir l'ID de l'utilisateur dans GLPI.
-            glpi_user_id = get_or_create_glpi_user(session_token, current_user.email, current_user.name)
-            if not glpi_user_id:
-                return []  # Pas d'utilisateur, donc pas de tickets.
+            # Les admins et agents voient tous les tickets
+            return all_tickets
 
-            # Étape 2: Obtenir la liste des IDs de tickets autorisés pour cet utilisateur.
-            user_ticket_ids = get_user_ticket_ids(session_token, glpi_user_id)
-            if not user_ticket_ids:
-                return []  # Pas de tickets pour cet utilisateur.
-
-            # Étape 3: Récupérer les détails complets UNIQUEMENT pour les tickets autorisés.
-            # Nous devons faire un nouvel appel à l'API GLPI pour obtenir les tickets par leurs IDs.
-            # C'est cette étape qui garantit la sécurité.
-            url = url_joiner(config['GLPI_API_URL'], 'Ticket')
-            params = {
-                'is_deleted': 'false',
-                'range': '0-1000',
-                'criteria[0][field]': 'id',
-                'criteria[0][searchtype]': 'equals',
-                'criteria[0][value]': '|'.join(map(str, user_ticket_ids))
-            }
-            response = requests.get(url, headers=headers, params=params)
-            response.raise_for_status()
-            return response.json()
-
-    except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=500, detail=f"Erreur GLPI: {e}")
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Erreur GLPI: {e}")
 
 def _create_ticket_internal(title: str, content: str, user: User):
-    """Logique interne pour créer un ticket GLPI. Peut être appelée par d'autres parties du backend."""
+    """Logique interne pour créer un ticket GLPI. Ajoute l'email du demandeur au contenu."""
     session_token = get_session_token()
     if not session_token:
         return {"success": False, "error": "Connexion à GLPI impossible."}
@@ -197,9 +151,15 @@ def _create_ticket_internal(title: str, content: str, user: User):
         return {"success": False, "error": f"Utilisateur GLPI non trouvé pour {user.email}"}
 
     config = load_glpi_config()
+
+    # CONTOURNEMENT: Ajoute l'email au contenu car GLPI ignore _users_id_requester
+    email_header = f"Email du demandeur: {user.email}\n\n"
+    content_with_email = email_header + content
+
     url = url_joiner(config['GLPI_API_URL'], 'Ticket')
     headers = {"Session-Token": session_token, "App-Token": config['GLPI_APP_TOKEN']}
-    ticket_data = {"input": {"name": title, "content": content, "_users_id_requester": glpi_user_id}}
+    ticket_data = {"input": {"name": title, "content": content_with_email, "_users_id_requester": glpi_user_id}}
+    
     try:
         response = requests.post(url, headers=headers, json=ticket_data)
         response.raise_for_status()
