@@ -175,6 +175,23 @@ def glpi_create_ticket(title: str = Body(..., embed=True), content: str = Body(.
         raise HTTPException(status_code=500, detail=result["error"])
     return result["ticket"]
 
+@router.get("/tickets/{ticket_id}/followups")
+def glpi_get_ticket_followups(ticket_id: int, current_user: User = Depends(get_current_user)):
+    session_token = get_session_token()
+    if not session_token:
+        raise HTTPException(status_code=500, detail="Connexion à GLPI impossible.")
+
+    config = load_glpi_config()
+    url = url_joiner(config['GLPI_API_URL'], f'Ticket/{ticket_id}/ITILFollowup')
+    headers = {"Session-Token": session_token, "App-Token": config['GLPI_APP_TOKEN']}
+
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Erreur GLPI lors de la récupération des suivis: {e}")
+
 @router.get("/tickets/{ticket_id}")
 def glpi_get_ticket(ticket_id: int, current_user: User = Depends(get_current_user)):
     """Récupère les détails d'un ticket spécifique."""
