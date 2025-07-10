@@ -15,7 +15,8 @@ def load_glpi_config():
         return {
             "GLPI_API_URL": "",
             "GLPI_APP_TOKEN": "",
-            "GLPI_USER_TOKEN": ""
+            "GLPI_USER_TOKEN": "",
+            "TOGETHER_API_KEY": ""
         }
 
 def save_glpi_config(config_data):

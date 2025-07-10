@@ -10,6 +10,8 @@ from urllib.parse import urljoin
 from datetime import datetime, timedelta
 import re
 from collections import Counter
+import together
+import os
 
 router = APIRouter(
     prefix="/api/analytics",
@@ -61,7 +63,7 @@ def get_main_stats():
             "Content-Type": "application/json"
         })
         
-        total_tickets = _get_glpi_count(session, glpi_url)
+        total_tickets = _get_glpi_count(session, glpi_url, params={'is_deleted': '0'})
         
         resolved_params = {
             'criteria[0][field]': 'status',
@@ -143,23 +145,49 @@ def _get_ticket_details_for_summary(session: requests.Session, glpi_url: str, ti
         print(f"Erreur de communication avec GLPI pour le ticket {ticket_id}: {e}")
         return None
 
-def _call_llm_for_summary(prompt: str) -> str:
-    """Simule un appel à un LLM pour générer un résumé."""
-    # Dans une vraie application, ce serait un appel à une API comme OpenAI
-    # Pour l'instant, nous retournons une version tronquée du prompt.
-    return "Résumé intelligent du ticket généré par l'IA: " + prompt[:150] + "..."
+def _call_together_ai_for_summary(prompt: str, api_key: str) -> str:
+    """Appelle l'API Together.ai pour générer un résumé."""
+    try:
+        together.api_key = api_key
+        response = together.Complete.create(
+            model="mistralai/Mixtral-8x7B-Instruct-v0.1",
+            prompt=f"[INST] Résume le ticket de support suivant en une seule phrase concise en français: {prompt} [/INST]",
+            max_tokens=100,
+            temperature=0.7,
+            top_k=50,
+            top_p=0.7,
+            repetition_penalty=1,
+            stop=["\n", "[/INST]"]
+        )
+        print(f"DEBUG: Full response from Together.ai: {response}")
+
+        if 'choices' in response and len(response['choices']) > 0:
+            summary = response['choices'][0]['text']
+            return summary.strip()
+        else:
+            error_message = response.get('error', {}).get('message', str(response))
+            raise ValueError(f"Réponse inattendue ou vide de l'API Together.ai: {error_message}")
+    except Exception as e:
+        print(f"Erreur lors de l'appel à Together.ai: {e}")
+        raise HTTPException(status_code=503, detail=f"Le service IA n'est pas disponible: {e}")
+
 
 @router.get("/ticket-summary/{ticket_id}", dependencies=[Depends(get_current_agent_or_admin_user)])
 def get_ticket_summary(ticket_id: int):
     config = load_glpi_config()
     glpi_url = config.get("GLPI_API_URL")
+    together_api_key = config.get("TOGETHER_API_KEY") or os.environ.get("TOGETHER_API_KEY")
+
+    if not together_api_key:
+        raise HTTPException(status_code=500, detail="La clé API pour le service IA n'est pas configurée.")
 
     with requests.Session() as session:
         ticket = _get_ticket_details_for_summary(session, glpi_url, ticket_id)
         if not ticket:
             raise HTTPException(status_code=404, detail="Ticket non trouvé ou erreur de communication GLPI.")
 
-        # Utiliser le nom et le contenu du ticket pour le résumé
         prompt = f"Titre: {ticket.get('name', '')}\nDescription: {ticket.get('content', '')}"
-        summary = _call_llm_for_summary(prompt)
+        
+        summary = _call_together_ai_for_summary(prompt, api_key=together_api_key)
+        
         return {"summary": summary}

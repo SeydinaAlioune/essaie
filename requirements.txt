@@ -10,3 +10,4 @@ sentence-transformers
 chromadb
 sqlalchemy
 python-dotenv
+together
