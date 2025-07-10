@@ -192,6 +192,30 @@ def glpi_get_ticket_followups(ticket_id: int, current_user: User = Depends(get_c
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Erreur GLPI lors de la récupération des suivis: {e}")
 
+def _create_ticket_followup_internal(ticket_id: int, content: str, is_private: int = 0):
+    """Logique interne pour ajouter un suivi à un ticket GLPI."""
+    session_token = get_session_token()
+    if not session_token:
+        return {"success": False, "error": "Connexion à GLPI impossible."}
+
+    config = load_glpi_config()
+    url = url_joiner(config['GLPI_API_URL'], f'Ticket/{ticket_id}/ITILFollowup')
+    headers = {"Session-Token": session_token, "App-Token": config['GLPI_APP_TOKEN']}
+    followup_data = {"input": {"content": content, "is_private": is_private}}
+
+    try:
+        response = requests.post(url, headers=headers, json=followup_data)
+        response.raise_for_status()
+        return {"success": True, "followup": response.json()}
+    except requests.exceptions.RequestException as e:
+        error_message = f"Erreur lors de l'ajout du suivi GLPI: {e}"
+        try:
+            error_details = response.json()
+            error_message += f" - {error_details}"
+        except Exception:
+            pass
+        return {"success": False, "error": error_message}
+
 @router.get("/tickets/{ticket_id}")
 def glpi_get_ticket(ticket_id: int, current_user: User = Depends(get_current_user)):
     """Récupère les détails d'un ticket spécifique."""

@@ -1,7 +1,9 @@
 import re
 from fastapi import APIRouter, Depends, Body
 from routers.auth import get_current_user
-from routers.glpi import _create_ticket_internal
+from routers.glpi import _create_ticket_internal, _create_ticket_followup_internal
+from pydantic import BaseModel
+from typing import Optional
 from search_vector_llm import search_vector, build_prompt, call_llm
 from datetime import datetime
 from pymongo import MongoClient
@@ -62,8 +64,25 @@ def is_valid_for_ticket_creation(fields: dict) -> bool:
 
 # --- Route Principale du Chatbot ---
 
+class ChatbotRequest(BaseModel):
+    question: str
+    ticket_id: Optional[int] = None
+
 @router.post("/chatbot/ask")
-def ask_chatbot(question: str = Body(...), current_user=Depends(get_current_user)):
+def ask_chatbot(request: ChatbotRequest, current_user=Depends(get_current_user)):
+    question = request.question
+
+    # --- 0. GESTION PRIORITAIRE : AJOUT D'UN SUIVI À UN TICKET EXISTANT ---
+    if request.ticket_id:
+        followup_result = _create_ticket_followup_internal(
+            ticket_id=request.ticket_id,
+            content=question
+        )
+        if followup_result["success"]:
+            return {"type": "followup_added", "message": "Votre suivi a bien été ajouté au ticket.", "followup": followup_result.get("followup")}
+        else:
+            return {"type": "error", "message": f"L'ajout de votre suivi a échoué: {followup_result.get('error')}"}
+
     user_id = str(getattr(current_user, "id", None) or getattr(current_user, "_id", None) or getattr(current_user, "email", "unknown_user"))
     ticket_draft_key = f"draft_{user_id}"
 
