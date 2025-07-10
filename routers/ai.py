@@ -86,7 +86,8 @@ def ask_chatbot(request: ChatbotRequest, current_user=Depends(get_current_user))
         logs_collection.insert_one({"type": "log", "message": f"Début de l'ajout d'un suivi au ticket {request.ticket_id}", "timestamp": datetime.utcnow()})
         followup_result = _create_ticket_followup_internal(
             ticket_id=request.ticket_id,
-            content=question
+            content=question,
+            user=current_user
         )
         if followup_result["success"]:
             logs_collection.insert_one({"type": "log", "message": f"Suivi ajouté avec succès au ticket {request.ticket_id}", "result": mongo_to_json(followup_result), "timestamp": datetime.utcnow()})

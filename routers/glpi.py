@@ -175,6 +175,42 @@ def _create_ticket_internal(title: str, content: str, user: User):
         logging.error(f"Échec de la création du ticket pour {user.email}. Erreur: {error_message}")
         return {"success": False, "error": error_message}
 
+def _create_ticket_followup_internal(ticket_id: int, content: str, user: User):
+    """Logique interne pour créer un suivi de ticket (ITILFollowup) avec préfixe de rôle."""
+    session_token = get_session_token()
+    if not session_token:
+        return {"success": False, "error": "Connexion à GLPI impossible."}
+
+    config = load_glpi_config()
+    url = url_joiner(config['GLPI_API_URL'], 'ITILFollowup')
+    headers = {"Session-Token": session_token, "App-Token": config['GLPI_APP_TOKEN']}
+
+    is_agent = user.role.value in ["admin", "agent_support", "agent_interne"]
+    prefix = "AGENT_MSG::" if is_agent else "CLIENT_MSG::"
+    content_with_prefix = f"{prefix}{content}"
+
+    followup_data = {
+        "input": {
+            "itemtype": "Ticket",
+            "items_id": ticket_id,
+            "content": content_with_prefix,
+            "is_private": 0
+        }
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=followup_data)
+        response.raise_for_status()
+        followup_info = response.json()
+        logging.info(f"Suivi ajouté avec succès au ticket {ticket_id}")
+        return {"success": True, "followup": followup_info}
+    except requests.exceptions.RequestException as e:
+        error_text = e.response.text if e.response else 'No response'
+        error_message = f"Erreur création suivi GLPI: {e} - {error_text}"
+        logging.error(f"Échec de l'ajout du suivi au ticket {ticket_id}. Erreur: {error_message}")
+        return {"success": False, "error": error_message}
+
+
 @router.post("/tickets")
 def glpi_create_ticket(title: str = Body(..., embed=True), content: str = Body(..., embed=True), current_user: User = Depends(get_current_user)):
     """Crée un nouveau ticket dans GLPI via la route API."""
@@ -182,6 +218,7 @@ def glpi_create_ticket(title: str = Body(..., embed=True), content: str = Body(.
     if not result["success"]:
         raise HTTPException(status_code=500, detail=result["error"])
     return result["ticket"]
+
 
 @router.get("/tickets/{ticket_id}/followups")
 def glpi_get_ticket_followups(ticket_id: int, current_user: User = Depends(get_current_user)):
@@ -196,58 +233,24 @@ def glpi_get_ticket_followups(ticket_id: int, current_user: User = Depends(get_c
     try:
         response = requests.get(url, headers=headers)
         response.raise_for_status()
-        return response.json()
+        followups = response.json()
+
+        processed_followups = []
+        for f in followups:
+            content = f.get('content', '')
+            if content.startswith('CLIENT_MSG::'):
+                f['author_role'] = 'client'
+                f['content'] = content[len('CLIENT_MSG::'):]
+            elif content.startswith('AGENT_MSG::'):
+                f['author_role'] = 'agent'
+                f['content'] = content[len('AGENT_MSG::'):]
+            else:
+                # Pour les anciens messages ou ceux sans préfixe, on se base sur users_id
+                f['author_role'] = 'client' if f.get('users_id') == 0 else 'agent'
+            processed_followups.append(f)
+        return processed_followups
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Erreur GLPI lors de la récupération des suivis: {e}")
-
-def _create_ticket_followup_internal(ticket_id: int, content: str, is_private: int = 0):
-    """Logique interne pour ajouter un suivi à un ticket GLPI."""
-    logging.info(f"Tentative d'ajout d'un suivi au ticket ID: {ticket_id}. Privé: {'Oui' if is_private else 'Non'}")
-    session_token = get_session_token()
-    if not session_token:
-        return {"success": False, "error": "Connexion à GLPI impossible."}
-
-    config = load_glpi_config()
-    url = url_joiner(config['GLPI_API_URL'], f'Ticket/{ticket_id}/ITILFollowup')
-    headers = {"Session-Token": session_token, "App-Token": config['GLPI_APP_TOKEN']}
-    followup_data = {"input": {"content": content, "is_private": is_private, "items_id": ticket_id, "itemtype": "Ticket"}}
-
-    try:
-        response = requests.post(url, headers=headers, json=followup_data)
-        response.raise_for_status()
-        logging.info(f"Suivi ajouté avec succès au ticket ID: {ticket_id}")
-        return {"success": True, "followup": response.json()}
-    except requests.exceptions.RequestException as e:
-        error_message = f"Erreur lors de l'ajout du suivi GLPI: {e}"
-        try:
-            error_details = response.json()
-            error_message += f" - {error_details}"
-        except Exception:
-            pass
-        logging.error(f"Échec de l'ajout du suivi au ticket ID: {ticket_id}. Erreur: {error_message}")
-        return {"success": False, "error": error_message}
-    session_token = get_session_token()
-    if not session_token:
-        return {"success": False, "error": "Connexion à GLPI impossible."}
-
-    config = load_glpi_config()
-    url = url_joiner(config['GLPI_API_URL'], f'Ticket/{ticket_id}/ITILFollowup')
-    headers = {"Session-Token": session_token, "App-Token": config['GLPI_APP_TOKEN']}
-    followup_data = {"input": {"content": content, "is_private": is_private}}
-
-    try:
-        response = requests.post(url, headers=headers, json=followup_data)
-        response.raise_for_status()
-        return {"success": True, "followup": response.json()}
-    except requests.exceptions.RequestException as e:
-        error_message = f"Erreur lors de l'ajout du suivi GLPI: {e}"
-        try:
-            error_details = response.json()
-            error_message += f" - {error_details}"
-        except Exception:
-            pass
-        logging.error(f"Échec de la création du ticket pour {user.email}. Erreur: {error_message}")
-        return {"success": False, "error": error_message}
 
 @router.get("/tickets/{ticket_id}")
 def glpi_get_ticket(ticket_id: int, current_user: User = Depends(get_current_user)):
