@@ -72,15 +72,27 @@ class ChatbotRequest(BaseModel):
 def ask_chatbot(request: ChatbotRequest, current_user=Depends(get_current_user)):
     question = request.question
 
+    logs_collection.insert_one({
+        "type": "request_received",
+        "user_id": str(getattr(current_user, "id", None) or getattr(current_user, "_id", None) or getattr(current_user, "email", "unknown_user")),
+        "question": question,
+        "has_ticket_id": bool(request.ticket_id),
+        "ticket_id": request.ticket_id,
+        "timestamp": datetime.utcnow()
+    })
+
     # --- 0. GESTION PRIORITAIRE : AJOUT D'UN SUIVI À UN TICKET EXISTANT ---
     if request.ticket_id:
+        logs_collection.insert_one({"type": "log", "message": f"Début de l'ajout d'un suivi au ticket {request.ticket_id}", "timestamp": datetime.utcnow()})
         followup_result = _create_ticket_followup_internal(
             ticket_id=request.ticket_id,
             content=question
         )
         if followup_result["success"]:
+            logs_collection.insert_one({"type": "log", "message": f"Suivi ajouté avec succès au ticket {request.ticket_id}", "result": mongo_to_json(followup_result), "timestamp": datetime.utcnow()})
             return {"type": "followup_added", "message": "Votre suivi a bien été ajouté au ticket.", "followup": followup_result.get("followup")}
         else:
+            logs_collection.insert_one({"type": "error", "message": f"Échec de l'ajout du suivi au ticket {request.ticket_id}", "error": followup_result.get('error'), "timestamp": datetime.utcnow()})
             return {"type": "error", "message": f"L'ajout de votre suivi a échoué: {followup_result.get('error')}"}
 
     user_id = str(getattr(current_user, "id", None) or getattr(current_user, "_id", None) or getattr(current_user, "email", "unknown_user"))
@@ -154,12 +166,14 @@ def ask_chatbot(request: ChatbotRequest, current_user=Depends(get_current_user))
         drafts_collection.delete_one({"_id": ticket_draft_key})
 
         if creation_result["success"]:
+            logs_collection.insert_one({"type": "log", "message": "Création de ticket réussie", "result": mongo_to_json(creation_result), "timestamp": datetime.utcnow()})
             ticket_info = creation_result.get("ticket", {})
             ticket_id = ticket_info.get("id", "inconnu")
             user_message = f"Ticket #{ticket_id} créé avec succès. Je reste à votre disposition si vous avez d'autres questions."
             return {"type": "ticket_created", "message": user_message, "ticket": mongo_to_json(ticket_info)}
         else:
             error_msg = creation_result.get("error", "une erreur inconnue")
+            logs_collection.insert_one({"type": "error", "message": "Échec de la création du ticket", "error": error_msg, "timestamp": datetime.utcnow()})
             user_message = f"J'avais toutes les informations, mais la création du ticket a échoué en raison d'une erreur interne : {error_msg}. L'équipe technique a été notifiée."
             return {"type": "error", "message": user_message}
 

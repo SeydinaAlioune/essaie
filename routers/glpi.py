@@ -3,6 +3,7 @@ from models import User
 from dependencies import get_current_user, get_current_admin_user
 from routers.configuration import load_glpi_config
 import requests
+import logging
 
 router = APIRouter()
 
@@ -140,6 +141,8 @@ def glpi_list_tickets(current_user: User = Depends(get_current_user)):
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Erreur GLPI: {e}")
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 def _create_ticket_internal(title: str, content: str, user: User):
     """Logique interne pour créer un ticket GLPI. Ajoute l'email du demandeur au contenu."""
     session_token = get_session_token()
@@ -153,6 +156,7 @@ def _create_ticket_internal(title: str, content: str, user: User):
     config = load_glpi_config()
 
     # CONTOURNEMENT: Ajoute l'email au contenu car GLPI ignore _users_id_requester
+    logging.info(f"Tentative de création de ticket pour l'utilisateur {user.email} avec le titre: '{title}'")
     email_header = f"Email du demandeur: {user.email}\n\n"
     content_with_email = email_header + content
 
@@ -163,9 +167,13 @@ def _create_ticket_internal(title: str, content: str, user: User):
     try:
         response = requests.post(url, headers=headers, json=ticket_data)
         response.raise_for_status()
-        return {"success": True, "ticket": response.json()}
+        ticket_info = response.json()
+        logging.info(f"Ticket créé avec succès dans GLPI avec l'ID: {ticket_info.get('id')}")
+        return {"success": True, "ticket": ticket_info}
     except requests.exceptions.RequestException as e:
-        return {"success": False, "error": f"Erreur création ticket GLPI: {e}"}
+        error_message = f"Erreur création ticket GLPI: {e}"
+        logging.error(f"Échec de la création du ticket pour {user.email}. Erreur: {error_message}")
+        return {"success": False, "error": error_message}
 
 @router.post("/tickets")
 def glpi_create_ticket(title: str = Body(..., embed=True), content: str = Body(..., embed=True), current_user: User = Depends(get_current_user)):
@@ -194,6 +202,30 @@ def glpi_get_ticket_followups(ticket_id: int, current_user: User = Depends(get_c
 
 def _create_ticket_followup_internal(ticket_id: int, content: str, is_private: int = 0):
     """Logique interne pour ajouter un suivi à un ticket GLPI."""
+    logging.info(f"Tentative d'ajout d'un suivi au ticket ID: {ticket_id}. Privé: {'Oui' if is_private else 'Non'}")
+    session_token = get_session_token()
+    if not session_token:
+        return {"success": False, "error": "Connexion à GLPI impossible."}
+
+    config = load_glpi_config()
+    url = url_joiner(config['GLPI_API_URL'], f'Ticket/{ticket_id}/ITILFollowup')
+    headers = {"Session-Token": session_token, "App-Token": config['GLPI_APP_TOKEN']}
+    followup_data = {"input": {"content": content, "is_private": is_private, "items_id": ticket_id, "itemtype": "Ticket"}}
+
+    try:
+        response = requests.post(url, headers=headers, json=followup_data)
+        response.raise_for_status()
+        logging.info(f"Suivi ajouté avec succès au ticket ID: {ticket_id}")
+        return {"success": True, "followup": response.json()}
+    except requests.exceptions.RequestException as e:
+        error_message = f"Erreur lors de l'ajout du suivi GLPI: {e}"
+        try:
+            error_details = response.json()
+            error_message += f" - {error_details}"
+        except Exception:
+            pass
+        logging.error(f"Échec de l'ajout du suivi au ticket ID: {ticket_id}. Erreur: {error_message}")
+        return {"success": False, "error": error_message}
     session_token = get_session_token()
     if not session_token:
         return {"success": False, "error": "Connexion à GLPI impossible."}
@@ -214,6 +246,7 @@ def _create_ticket_followup_internal(ticket_id: int, content: str, is_private: i
             error_message += f" - {error_details}"
         except Exception:
             pass
+        logging.error(f"Échec de la création du ticket pour {user.email}. Erreur: {error_message}")
         return {"success": False, "error": error_message}
 
 @router.get("/tickets/{ticket_id}")
