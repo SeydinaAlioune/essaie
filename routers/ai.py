@@ -12,8 +12,8 @@ from bson import ObjectId
 # --- Configuration ---
 mongo_client = MongoClient("mongodb://localhost:27017/")
 db = mongo_client["mcp_backend"]
-logs_collection = db["chatbot_logs"]
-drafts_collection = db["chatbot_ticket_drafts"]
+logs_collection = db["chatbot_logs"] # Pour obtenir un handle vers la collection chabot_logs
+drafts_collection = db["chatbot_ticket_drafts"] # Pour obtenir un handle(ref)vers notre collection chatbot_ticket_drafts.C'est la memoire a court terme du chatbot pour une conversation donnee 
 router = APIRouter()
 
 # --- Fonctions Utilitaires ---
@@ -79,7 +79,7 @@ def ask_chatbot(request: ChatbotRequest, current_user=Depends(get_current_user))
         "has_ticket_id": bool(request.ticket_id),
         "ticket_id": request.ticket_id,
         "timestamp": datetime.utcnow()
-    })
+    }) # permet de looger toutes requete dans mongodb qui va servir de boite noire 
 
     # --- 0. GESTION PRIORITAIRE : AJOUT D'UN SUIVI À UN TICKET EXISTANT ---
     if request.ticket_id:
@@ -123,7 +123,7 @@ def ask_chatbot(request: ChatbotRequest, current_user=Depends(get_current_user))
     # Appel au LLM avec l'historique complet pour comprendre le contexte
     context = search_vector(question)
     prompt = build_prompt(question, context, history)
-    llm_response_text = call_llm(prompt)
+    llm_response_text = call_llm(prompt) #qui permet d'envoyer le prompt a Together.aia
     parsed_response = parse_llm_response(llm_response_text)
 
     # Log de la transaction pour la traçabilité

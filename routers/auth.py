@@ -36,17 +36,17 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     )
     db.add(new_user)
     db.commit()
-    db.refresh(new_user)
+    db.refresh(new_user)#pour rafraichir l'objet et obtenir l'id donne par la base de donne
 
     return new_user
 
-@router.post("/login", response_model=schemas.Token)
+@router.post("/login", response_model=schemas.TokenWithUser)
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
     """
-    Connecte l'utilisateur et retourne un token JWT.
+    Connecte l'utilisateur et retourne un token JWT ainsi que les informations de l'utilisateur.
     """
     user = db.query(models.User).filter(models.User.email == form_data.username).first()
 
@@ -69,7 +69,7 @@ def login(
         expires_delta=access_token_expires
     )
 
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {"access_token": access_token, "token_type": "bearer", "user": user}
 
 
 @router.get("/me", response_model=schemas.User)

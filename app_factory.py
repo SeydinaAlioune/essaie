@@ -25,7 +25,7 @@ def create_default_admin():
             print("Utilisateur admin par défaut créé.")
     finally:
         db.close()
-
+#permet de creer un instance de notre application 
 def create_app():
     app = FastAPI(
         title="MCP API",
@@ -43,7 +43,7 @@ def create_app():
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=origins,
+        allow_origins=["*"], # Autoriser toutes les origines pour le développement
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

@@ -9,7 +9,7 @@ load_dotenv()
 
 from database import engine, Base
 import models  # Importer les modèles pour qu'ils soient enregistrés par Base
-from app_factory import create_app
+from app_factory import create_app #qui se trouve dans app_factory.py
 
 # Crée toutes les tables dans la base de données (ex: 'users')
 # C'est une opération idempotente : elle ne recréera pas les tables si elles existent déjà.

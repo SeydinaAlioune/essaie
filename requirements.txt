@@ -9,5 +9,6 @@ python-multipart
 sentence-transformers
 chromadb
 sqlalchemy
+psycopg2-binary
 python-dotenv
-together
+together #connexion au grand modele de language LLM

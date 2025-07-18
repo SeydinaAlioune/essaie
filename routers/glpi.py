@@ -2,7 +2,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from models import User
 from dependencies import get_current_user, get_current_admin_user
 from routers.configuration import load_glpi_config
-import requests
+import requests 
 import logging
 
 router = APIRouter()
