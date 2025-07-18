@@ -1,5 +1,6 @@
 fastapi
 uvicorn
+groq
 requests
 passlib[bcrypt]
 python-jose
