@@ -1,4 +1,11 @@
 from pydantic import BaseModel
+from typing import Literal
+
+class MiddlewareConfig(BaseModel):
+    log_level: Literal['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+    waf_enabled: bool
+    rate_limit_enabled: bool
+    maintenance_mode: bool
 from typing import List, Optional
 from enum import Enum
 from datetime import datetime

@@ -1,6 +1,6 @@
 fastapi
 uvicorn
-groq
+
 requests
 passlib[bcrypt]
 python-jose
@@ -10,6 +10,6 @@ python-multipart
 sentence-transformers
 chromadb
 sqlalchemy
-psycopg2-binary
+
 python-dotenv
 together #connexion au grand modele de language LLM

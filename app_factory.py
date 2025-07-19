@@ -1,17 +1,30 @@
+# Imports from standard library or third-party packages
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+# Imports from this project
 from database import create_db_and_tables, SessionLocal
-from routers import auth as auth_router, glpi, health, ai, analytics, admin, configuration, docs, knowledge_base
-import models
 from auth import hash_password
+import models
+from routers import (
+    users,
+    auth,
+    knowledge,
+    configuration,
+    glpi,
+    middleware,
+    analytics,
+    admin,
+    docs,
+    knowledge_base,
+)
 
 def create_default_admin():
+    """Crée un utilisateur administrateur par défaut s'il n'existe pas."""
     db = SessionLocal()
     try:
-        # Vérifier si un admin existe déjà
         admin_user = db.query(models.User).filter(models.User.email == "admin@example.com").first()
         if not admin_user:
-            # Créer l'utilisateur admin s'il n'existe pas
             hashed_password = hash_password("admin")
             new_admin = models.User(
                 email="admin@example.com",
@@ -22,47 +35,42 @@ def create_default_admin():
             )
             db.add(new_admin)
             db.commit()
-            print("Utilisateur admin par défaut créé.")
     finally:
         db.close()
-#permet de creer un instance de notre application 
+
 def create_app():
+    """Crée et configure l'instance de l'application FastAPI."""
     app = FastAPI(
         title="MCP API",
-        description="API pour la gestion de la plateforme MCP",
+        description="API pour le Moteur de Connaissances Professionnelles",
         version="1.0.0"
     )
 
-    # Configuration CORS
-    origins = [
-        "http://localhost:5173",  # Frontend Vite/React
-        "http://localhost:3000",  # Autre port de développement frontend possible
-        "http://localhost:8080",  # GLPI local
-        "http://localhost",
-    ]
-
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"], # Autoriser toutes les origines pour le développement
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
+    # Événements de démarrage
     @app.on_event("startup")
     def on_startup():
         create_db_and_tables()
         create_default_admin()
 
-    # Enregistrement des routeurs
-    app.include_router(health.router, prefix="/health", tags=["Health"])
-    app.include_router(auth_router.router, prefix="/auth", tags=["Authentication"])
-    app.include_router(admin.router, prefix="/admin", tags=["Admin"])
-    app.include_router(glpi.router, prefix="/api/glpi", tags=["GLPI"])
-    app.include_router(ai.router, prefix="/api", tags=["AI"])
-    app.include_router(analytics.router)
+    # Configuration CORS
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # Doit être restreint en production
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Inclusion des routeurs
+    app.include_router(users.router, prefix="/users", tags=["Users"])
+    app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+    app.include_router(knowledge.router, prefix="/knowledge", tags=["Knowledge"])
     app.include_router(configuration.router, prefix="/config", tags=["Configuration"])
-    app.include_router(docs.router, prefix="/docs-api", tags=["Documents"])
+    app.include_router(glpi.router, prefix="/glpi", tags=["GLPI"])
+    app.include_router(middleware.router, prefix="/middleware", tags=["Middleware"])
+    app.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
+    app.include_router(admin.router, prefix="/admin", tags=["Admin"])
+    app.include_router(docs.router, prefix="/docs-management", tags=["Docs Management"])
     app.include_router(knowledge_base.router, prefix="/kb", tags=["Knowledge Base"])
 
     @app.get("/", tags=["Root"])

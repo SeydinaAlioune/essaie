@@ -4,7 +4,7 @@ print(f"*** CHEMIN: {__file__} ***\n\n")
 from fastapi import APIRouter, Depends, HTTPException
 from dependencies import get_current_agent_or_admin_user
 from routers.glpi import get_session_token
-from routers.configuration import load_glpi_config
+from routers.configuration import load_config as load_glpi_config
 import requests
 from urllib.parse import urljoin
 from datetime import datetime, timedelta

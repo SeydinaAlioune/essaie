@@ -1,0 +1,6 @@
+{
+    "log_level": "INFO",
+    "waf_enabled": false,
+    "rate_limit_enabled": true,
+    "maintenance_mode": false
+}
