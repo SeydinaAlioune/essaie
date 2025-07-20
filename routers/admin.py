@@ -36,9 +36,8 @@ def create_user(
     if db.users.find_one({"email": user.email}):
         raise HTTPException(status_code=400, detail="Email déjà utilisé")
     
-    hashed_pwd = hash_password(user.password)
-    user_data = user.dict(exclude={"password"})
-    user_data["hashed_password"] = hashed_pwd
+    user_data = user.dict()
+    user_data["password"] = hash_password(user.password)
     
     result = db.users.insert_one(user_data)
     new_user = db.users.find_one({"_id": result.inserted_id})
@@ -70,14 +69,26 @@ def get_user(
 @router.put("/users/{user_id}", summary="Mettre à jour un utilisateur", response_model=schemas.User)
 def update_user(
     user_id: str,
-    user_update: schemas.UserBase,
+    user_update: schemas.UserUpdate, # Utilise le nouveau schéma
     db: Database = Depends(get_mongo_db),
     current_admin: schemas.User = Depends(get_current_admin_user)
 ):
     if not ObjectId.is_valid(user_id):
         raise HTTPException(status_code=400, detail=f"Invalid ObjectId: {user_id}")
-    
+
+    # Crée un dictionnaire avec les champs à mettre à jour
     update_data = user_update.dict(exclude_unset=True)
+
+    # Si un nouveau mot de passe est fourni, le hasher et l'ajouter aux données de mise à jour
+    if user_update.password:
+        update_data["password"] = hash_password(user_update.password)
+    else:
+        # S'assurer de ne pas effacer le mot de passe existant si non fourni
+        update_data.pop("password", None)
+
+    if not update_data:
+        raise HTTPException(status_code=400, detail="Aucune donnée à mettre à jour")
+
     result = db.users.update_one({"_id": ObjectId(user_id)}, {"$set": update_data})
 
     if result.matched_count == 0:

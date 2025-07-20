@@ -27,6 +27,7 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     role = Column(SQLAlchemyEnum(UserRole), default=UserRole.client, nullable=False)
     status = Column(SQLAlchemyEnum(UserStatus), default=UserStatus.pending, nullable=False)
+    glpi_user_id = Column(Integer, nullable=True)  # ID de l'utilisateur dans GLPI
 
 
 class Document(Base):

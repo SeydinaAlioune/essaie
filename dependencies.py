@@ -55,7 +55,8 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> schemas.User:
         name=user_data.get('name'),
         email=user_data.get('email'),
         role=user_data.get('role'),
-        status=user_data.get('status')
+        status=user_data.get('status'),
+        glpi_user_id=user_data.get('glpi_user_id')  # Inclure l'ID GLPI
     )
 
 def get_current_admin_user(current_user: schemas.User = Depends(get_current_user)) -> schemas.User:

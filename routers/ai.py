@@ -1,13 +1,15 @@
 import re
+import logging
 from fastapi import APIRouter, Depends, Body
 from routers.auth import get_current_user
-from routers.glpi import _create_ticket_internal, _create_ticket_followup_internal
+from routers.glpi import _create_ticket_internal, _create_ticket_followup_internal, glpi_get_ticket
 from pydantic import BaseModel
 from typing import Optional
 from search_vector_llm import search_vector, build_prompt, call_llm
 from datetime import datetime
 from pymongo import MongoClient
 from bson import ObjectId
+from schemas import User
 
 # --- Configuration ---
 mongo_client = MongoClient("mongodb://localhost:27017/")
@@ -67,6 +69,9 @@ def is_valid_for_ticket_creation(fields: dict) -> bool:
 class ChatbotRequest(BaseModel):
     question: str
     ticket_id: Optional[int] = None
+
+class SummarizeRequest(BaseModel):
+    ticket_id: int
 
 @router.post("/chatbot/ask")
 def ask_chatbot(request: ChatbotRequest, current_user=Depends(get_current_user)):
@@ -187,3 +192,37 @@ def ask_chatbot(request: ChatbotRequest, current_user=Depends(get_current_user))
     )
 
     return {"type": "conversation", "message": user_message}
+
+@router.post("/summarize_ticket")
+def summarize_ticket(request: SummarizeRequest, current_user: User = Depends(get_current_user)):
+    """Génère un résumé d'une conversation de ticket en utilisant un LLM."""
+    if current_user.role.value not in ["admin", "agent_support", "agent_interne"]:
+        raise HTTPException(status_code=403, detail="Accès non autorisé")
+
+    try:
+        # 1. Récupérer les détails complets du ticket en utilisant la fonction existante
+        ticket_data = glpi_get_ticket(ticket_id=request.ticket_id, current_user=current_user)
+
+        # 2. Formater la conversation pour le LLM
+        conversation_text = f"Titre du Ticket: {ticket_data['name']}\nDescription initiale: {ticket_data['content']}\n\nHistorique de la conversation:\n"
+        
+        sorted_followups = sorted(ticket_data.get('followups', []), key=lambda f: f['date_creation'])
+
+        for followup in sorted_followups:
+            sender = "Agent" if 'AGENT_MSG::' in followup['content'] else "Client"
+            message = followup['content'].replace('AGENT_MSG::', '').replace('CLIENT_MSG::', '').strip()
+            conversation_text += f"- {sender}: {message}\n"
+
+        # 3. Créer le prompt pour le LLM
+        summary_prompt = f"Voici une conversation de ticket de support. Agis comme un expert du support technique et fournis un résumé très concis (3-4 phrases maximum) qui capture l'essentiel du problème, les actions déjà prises, et l'état actuel. Le résumé doit être en français.\n\n---\n{conversation_text}---\n"
+
+        # 4. Appeler le service LLM pour obtenir le résumé
+        summary = get_llm_answer(summary_prompt, []) # Pas d'historique de chat ici
+
+        return {"summary": summary}
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Erreur lors du résumé du ticket {request.ticket_id}: {e}")
+        raise HTTPException(status_code=500, detail="Une erreur interne est survenue lors de la génération du résumé.")

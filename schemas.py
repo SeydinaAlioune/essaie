@@ -28,7 +28,15 @@ class UserBase(BaseModel):
     name: str
     email: str
     role: UserRole
-    status: UserStatus = UserStatus.pending
+    status: UserStatus
+
+# Schéma pour la mise à jour de l'utilisateur (tous les champs optionnels)
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    role: Optional[UserRole] = None
+    status: Optional[UserStatus] = None
+    password: Optional[str] = None
 
 # Schéma pour la création d'utilisateur (inclut le mot de passe)
 class UserCreate(UserBase):
@@ -37,6 +45,7 @@ class UserCreate(UserBase):
 # Schéma pour la lecture d'un utilisateur (réponse API)
 class User(UserBase):
     id: str
+    glpi_user_id: Optional[int] = None
 
     class Config:
         from_attributes = True
