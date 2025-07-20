@@ -3,12 +3,12 @@ from passlib.context import CryptContext
 
 # --- Configuration --- #
 MONGO_URI = "mongodb://localhost:27017/"
-DB_NAME = "cms_db" # Assurez-vous que c'est le bon nom de base de données
+DB_NAME = "mcp_backend" # Correction du nom de la base de données pour correspondre à la configuration réelle
 
-# --- Identifiants de l'administrateur à créer --- #
-ADMIN_NAME = "Admin User"
-ADMIN_EMAIL = "admin@example.com"
-ADMIN_PASSWORD = "admin"
+# --- Identifiants de l'administrateur à mettre à jour --- #
+ADMIN_NAME = "diaoissa0290@gmail.com"
+ADMIN_EMAIL = "diaoissa0290@gmail.com"
+ADMIN_PASSWORD = "admin" # Le nouveau mot de passe sera 'admin'
 ADMIN_ROLE = "admin"
 ADMIN_STATUS = "active"
 

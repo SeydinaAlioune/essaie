@@ -36,7 +36,7 @@ class UserCreate(UserBase):
 
 # Schéma pour la lecture d'un utilisateur (réponse API)
 class User(UserBase):
-    id: int
+    id: str
 
     class Config:
         from_attributes = True

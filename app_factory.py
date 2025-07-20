@@ -7,7 +7,6 @@ from database import create_db_and_tables, SessionLocal
 from auth import hash_password
 import models
 from routers import (
-    users,
     auth,
     knowledge,
     configuration,
@@ -17,6 +16,8 @@ from routers import (
     admin,
     docs,
     knowledge_base,
+    ai,
+    health
 )
 
 def create_default_admin():
@@ -62,8 +63,7 @@ def create_app():
     )
 
     # Inclusion des routeurs
-    app.include_router(users.router, prefix="/users", tags=["Users"])
-    app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+    app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
     app.include_router(knowledge.router, prefix="/knowledge", tags=["Knowledge"])
     app.include_router(configuration.router, prefix="/config", tags=["Configuration"])
     app.include_router(glpi.router, prefix="/glpi", tags=["GLPI"])
@@ -72,6 +72,8 @@ def create_app():
     app.include_router(admin.router, prefix="/admin", tags=["Admin"])
     app.include_router(docs.router, prefix="/docs-management", tags=["Docs Management"])
     app.include_router(knowledge_base.router, prefix="/kb", tags=["Knowledge Base"])
+    app.include_router(ai.router, prefix="/ai", tags=["AI"])
+    app.include_router(health.router, prefix="/health", tags=["Health"])
 
     @app.get("/", tags=["Root"])
     def read_root():

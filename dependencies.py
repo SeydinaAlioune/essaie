@@ -4,47 +4,32 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
 
-from database import SessionLocal, get_db
-from models import User
+import schemas
 from config import SECRET_KEY, ALGORITHM
+from database import get_mongo_db
 
-# --- CONFIGURATION DE LA SÉCURITÉ ---
-
-# Contexte pour le hachage des mots de passe (bcrypt est la norme)
+# --- CONFIGURATION SÉCURITÉ ---
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# Durée de validité du token en minutes
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
-
-# Indique à FastAPI où trouver le token dans la requête (endpoint de login)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
-# --- FONCTIONS UTILITAIRES DE SÉCURITÉ ---
-
+# --- FONCTIONS UTILITAIRES ---
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Vérifie si un mot de passe en clair correspond à un mot de passe haché."""
     return pwd_context.verify(plain_password, hashed_password)
 
 def hash_password(password: str) -> str:
-    """Hache un mot de passe en utilisant bcrypt."""
     return pwd_context.hash(password)
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
-    """Crée un nouveau token JWT."""
     to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        # Par défaut, le token expire après ACCESS_TOKEN_EXPIRE_MINUTES
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    expire_time = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire_time})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-# --- DÉPENDANCES FASTAPI ---
+# --- DÉPENDANCES FASTAPI --- 
 
-def get_current_user(token: str = Depends(oauth2_scheme), db = Depends(get_db)) -> User:
-    """Décode le token JWT pour obtenir l'utilisateur actuel."""
+def get_current_user(token: str = Depends(oauth2_scheme)) -> schemas.User:
+    """Décode le token JWT et récupère l'utilisateur depuis MongoDB."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Impossible de valider les informations d'identification",
@@ -58,25 +43,34 @@ def get_current_user(token: str = Depends(oauth2_scheme), db = Depends(get_db)) 
     except JWTError:
         raise credentials_exception
     
-    user = db.query(User).filter(User.email == email).first()
-    if user is None:
+    db = get_mongo_db()
+    user_data = db.users.find_one({"email": email})
+    
+    if user_data is None:
         raise credentials_exception
-    return user
 
-def get_current_admin_user(current_user: User = Depends(get_current_user)) -> User:
+    # Convertir le document MongoDB en modèle Pydantic
+    return schemas.User(
+        id=str(user_data.get('_id')),
+        name=user_data.get('name'),
+        email=user_data.get('email'),
+        role=user_data.get('role'),
+        status=user_data.get('status')
+    )
+
+def get_current_admin_user(current_user: schemas.User = Depends(get_current_user)) -> schemas.User:
     """Vérifie que l'utilisateur actuel est un administrateur."""
-    # Utilise .value pour comparer avec l'énumération du modèle
-    if current_user.role.value != "admin":
+    if current_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="L'opération nécessite des privilèges d'administrateur"
         )
     return current_user
 
-def get_current_agent_or_admin_user(current_user: User = Depends(get_current_user)) -> User:
-    """Vérifie que l'utilisateur actuel est un agent (support ou interne) ou un administrateur."""
+def get_current_agent_or_admin_user(current_user: schemas.User = Depends(get_current_user)) -> schemas.User:
+    """Vérifie que l'utilisateur actuel est un agent ou un administrateur."""
     allowed_roles = ["admin", "agent_support", "agent_interne"]
-    if current_user.role.value not in allowed_roles:
+    if current_user.role not in allowed_roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="L'opération nécessite des privilèges d'agent ou d'administrateur"

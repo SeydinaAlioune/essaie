@@ -1,79 +1,62 @@
 from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
 from datetime import timedelta
 
-import models
 import schemas
-from database import get_db
 from dependencies import (
     get_current_user,
-    hash_password,
     verify_password,
     create_access_token,
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
+from database import get_mongo_db
 
 router = APIRouter()
 
-@router.post("/register", response_model=schemas.User, status_code=status.HTTP_201_CREATED)
-def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    """
-    Permet à un utilisateur de s'inscrire.
-    Le compte est créé avec le statut 'pending' par défaut.
-    """
-    db_user = db.query(models.User).filter(models.User.email == user.email).first()
-    if db_user:
-        raise HTTPException(status_code=400, detail="Email déjà utilisé")
-
-    hashed_pw = hash_password(user.password)
-    new_user = models.User(
-        name=user.name,
-        email=user.email,
-        hashed_password=hashed_pw,
-        role=user.role,
-        status=user.status
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)#pour rafraichir l'objet et obtenir l'id donne par la base de donne
-
-    return new_user
-
 @router.post("/login", response_model=schemas.TokenWithUser)
-def login(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db)
-):
+def login(form_data: OAuth2PasswordRequestForm = Depends()):
     """
-    Connecte l'utilisateur et retourne un token JWT ainsi que les informations de l'utilisateur.
+    Connecte l'utilisateur via MongoDB et retourne un token JWT.
     """
-    user = db.query(models.User).filter(models.User.email == form_data.username).first()
+    db = get_mongo_db()
+    users_collection = db["users"]
+    
+    user_data = users_collection.find_one({"email": form_data.username})
 
-    if not user or not verify_password(form_data.password, user.hashed_password):
+    # Vérification robuste pour éviter les crashs si le document utilisateur est malformé
+    if not user_data or not user_data.get("password") or not verify_password(form_data.password, user_data["password"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email ou mot de passe incorrect",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if user.status != models.UserStatus.active:
+    if user_data.get("status") != "active":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Votre compte est inactif (statut: {user.status.value}). Veuillez contacter un administrateur."
+            detail=f"Votre compte est inactif (statut: {user_data.get('status')}). Veuillez contacter un administrateur."
         )
+
+    # L'objet utilisateur doit correspondre au schéma `schemas.User`
+    user_for_response = schemas.User(
+        id=str(user_data.get('_id')),
+        name=user_data.get('name'),
+        email=user_data.get('email'),
+        role=user_data.get('role'),
+        status=user_data.get('status')
+    )
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.email, "name": user.name, "role": user.role.value},
+        data={"sub": user_data["email"], "name": user_data.get("name"), "role": user_data.get("role")},
         expires_delta=access_token_expires
     )
 
-    return {"access_token": access_token, "token_type": "bearer", "user": user}
+    return {"access_token": access_token, "token_type": "bearer", "user": user_for_response}
 
 
 @router.get("/me", response_model=schemas.User)
-def read_users_me(current_user: models.User = Depends(get_current_user)):
+def read_users_me(current_user: schemas.User = Depends(get_current_user)):
     """
     Retourne les informations de l'utilisateur actuellement connecté.
     """

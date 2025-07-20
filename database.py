@@ -26,3 +26,21 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# --- MongoDB Configuration ---
+from pymongo import MongoClient
+from pymongo.database import Database
+
+MONGO_URI = "mongodb://localhost:27017/"
+DB_NAME = "mcp_backend"
+
+# Créer le client une seule fois pour être réutilisé à travers l'application
+mongo_client = MongoClient(MONGO_URI)
+
+def get_mongo_db() -> Database:
+    """
+    Retourne une instance de la base de données MongoDB.
+    """
+    return mongo_client[DB_NAME]
+
